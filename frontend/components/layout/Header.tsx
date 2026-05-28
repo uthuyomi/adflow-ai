@@ -2,15 +2,23 @@
 
 import { Bell, CheckCircle2, ChevronDown, Menu, RefreshCw, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { signOut } from "@/lib/auth";
 import { useUiStore } from "@/lib/store";
 
 const labels: Record<string, string> = {
   "/": "Dashboard",
   "/dashboard": "Dashboard",
+  "/projects": "Projects",
+  "/ads": "X Ads",
+  "/lps": "Landing Pages",
+  "/pairs": "Ad LP Pairs",
+  "/orchestration": "AI OS",
+  "/history": "History",
   "/campaigns": "Campaigns",
   "/lp": "LP Analysis",
   "/improvements": "Improvements",
@@ -24,6 +32,14 @@ export function Header() {
   const project = useUiStore((state) => state.selectedProject);
   const root = `/${pathname.split("/")[1]}`;
   const current = labels[pathname] ?? labels[root] ?? "Workspace";
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast.success("Signed out.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sign out failed.");
+    }
+  };
 
   return (
     <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur md:px-6">
@@ -67,6 +83,9 @@ export function Header() {
         </Button>
         <Button variant="ghost" size="icon" aria-label="Notifications">
           <Bell className="h-5 w-5" />
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleSignOut}>
+          Logout
         </Button>
       </div>
     </header>

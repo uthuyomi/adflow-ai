@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+from typing import Any
+
+import requests
+
+
+class SupabaseRepository:
+    def __init__(self, *, supabase_url: str, supabase_key: str) -> None:
+        self.supabase_url = supabase_url.rstrip("/")
+        self.supabase_key = supabase_key
+
+    def get_user_id(self, access_token: str) -> str:
+        response = requests.get(
+            f"{self.supabase_url}/auth/v1/user",
+            headers={
+                "apikey": self.supabase_key,
+                "Authorization": f"Bearer {access_token}",
+            },
+            timeout=30,
+        )
+        self._raise(response, "Supabase auth lookup failed")
+        user_id = response.json().get("id")
+        if not user_id:
+            raise ValueError("Supabase auth response did not include a user id.")
+        return user_id
+
+    def get_one(
+        self,
+        table: str,
+        *,
+        user_id: str,
+        filters: dict[str, Any],
+        select: str = "*",
+    ) -> dict[str, Any]:
+        rows = self.get_many(table, user_id=user_id, filters=filters, select=select, limit=1)
+        if not rows:
+            raise ValueError(f"{table} record was not found.")
+        return rows[0]
+
+    def get_many(
+        self,
+        table: str,
+        *,
+        user_id: str,
+        filters: dict[str, Any] | None = None,
+        select: str = "*",
+        order: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"select": select, "user_id": f"eq.{user_id}"}
+        for key, value in (filters or {}).items():
+            if isinstance(value, list):
+                params[key] = f"in.({','.join(str(item) for item in value)})"
+            else:
+                params[key] = f"eq.{value}"
+        if order:
+            params["order"] = order
+        if limit:
+            params["limit"] = str(limit)
+
+        response = requests.get(
+            f"{self.supabase_url}/rest/v1/{table}",
+            headers=self._headers(),
+            params=params,
+            timeout=30,
+        )
+        self._raise(response, f"Supabase select failed for {table}")
+        return response.json()
+
+    def insert(self, table: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = requests.post(
+            f"{self.supabase_url}/rest/v1/{table}",
+            headers={**self._headers(), "Prefer": "return=representation"},
+            json=payload,
+            timeout=30,
+        )
+        self._raise(response, f"Supabase insert failed for {table}")
+        rows = response.json()
+        return rows[0] if rows else payload
+
+    def update(
+        self,
+        table: str,
+        *,
+        user_id: str,
+        filters: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        params = {"user_id": f"eq.{user_id}", **{key: f"eq.{value}" for key, value in filters.items()}}
+        response = requests.patch(
+            f"{self.supabase_url}/rest/v1/{table}",
+            headers={**self._headers(), "Prefer": "return=representation"},
+            params=params,
+            json=payload,
+            timeout=30,
+        )
+        self._raise(response, f"Supabase update failed for {table}")
+        rows = response.json()
+        return rows[0] if rows else payload
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "apikey": self.supabase_key,
+            "Authorization": f"Bearer {self.supabase_key}",
+            "Content-Type": "application/json",
+        }
+
+    @staticmethod
+    def _raise(response: requests.Response, message: str) -> None:
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            raise ValueError(f"{message}: {response.text}") from exc

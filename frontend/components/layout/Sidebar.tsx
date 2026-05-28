@@ -4,12 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Boxes,
+  BrainCircuit,
+  Clock3,
   FileDiff,
   Gauge,
   LayoutDashboard,
+  Link2,
   Megaphone,
   Settings,
   Sparkles,
+  SquareKanban,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +25,12 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/projects", label: "Projects", icon: SquareKanban },
+  { href: "/ads", label: "X Ads", icon: Megaphone },
+  { href: "/lps", label: "Landing Pages", icon: Boxes },
+  { href: "/pairs", label: "Ad LP Pairs", icon: Link2 },
+  { href: "/orchestration", label: "AI OS", icon: BrainCircuit },
+  { href: "/history", label: "History", icon: Clock3 },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/lp", label: "LP Analysis", icon: Gauge },
   { href: "/improvements", label: "Improvements", icon: Sparkles, pending: 6 },
@@ -93,12 +105,13 @@ export function Sidebar() {
           <div className="relative h-full">
             {sidebar}
             <Button
+              aria-label="Close navigation"
               className="absolute right-3 top-3"
               onClick={() => setSidebarOpen(false)}
               size="icon"
               variant="ghost"
             >
-              ×
+              <X className="h-4 w-4" />
             </Button>
           </div>
         </div>

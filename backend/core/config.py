@@ -18,6 +18,10 @@ class Settings(BaseModel):
     supabase_url: str | None = None
     supabase_key: str | None = None
     supabase_table: str = "adflow_runs"
+    grok_api_key: str | None = None
+    grok_model: str | None = None
+    gemini_api_key: str | None = None
+    gemini_model: str | None = None
 
     def validate_runtime(self) -> None:
         if self.ai_provider == "openai":
@@ -60,4 +64,8 @@ def load_settings() -> Settings:
             or os.getenv("SUPABASE_ANON_KEY")
         ),
         supabase_table=os.getenv("ADFLOW_SUPABASE_TABLE", "adflow_runs"),
+        grok_api_key=os.getenv("GROK_API_KEY"),
+        grok_model=os.getenv("GROK_MODEL"),
+        gemini_api_key=os.getenv("GEMINI_API_KEY"),
+        gemini_model=os.getenv("GEMINI_MODEL"),
     )
