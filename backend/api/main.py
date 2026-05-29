@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+import os
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,7 +37,9 @@ from backend.services.github.in_memory_pr_client import InMemoryPullRequestClien
 from backend.services.github.pr_service import PRService
 from backend.services.history.change_history_service import ChangeHistoryService
 from backend.services.lp.lp_collector import LPCollection, LPCollector
+from backend.services.market.market_research_service import MarketResearchService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
+from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 app = FastAPI(title="AdFlow AI")
@@ -74,6 +77,39 @@ class DecisionRequest(BaseModel):
     decision_reason: str | None = None
 
 
+class PairAnalysisRequest(BaseModel):
+    ai_mode: Literal["multi_provider", "openai_only"] = "multi_provider"
+
+
+class MarketResearchRunRequest(BaseModel):
+    project_id: str | None = None
+    ad_lp_pair_id: str
+    query: str
+
+
+class OutcomeCreateRequest(BaseModel):
+    project_id: str | None = None
+    ad_lp_pair_id: str
+    source_ai_result_id: str | None = None
+    source_codex_task_id: str | None = None
+    title: str
+    description: str | None = None
+    before_metrics: dict[str, Any] = Field(default_factory=dict)
+    after_metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class OutcomeUpdateRequest(BaseModel):
+    implemented_at: str | None = None
+    measured_at: str | None = None
+    before_metrics: dict[str, Any] | None = None
+    after_metrics: dict[str, Any] | None = None
+    outcome_status: str | None = None
+    outcome_summary: str | None = None
+    learning_notes: str | None = None
+    title: str | None = None
+    description: str | None = None
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -108,12 +144,15 @@ def _authenticated_user_id(authorization: str | None = Header(default=None)) -> 
 @app.post("/analysis/pairs/{pair_id}/run")
 def run_pair_analysis(
     pair_id: str,
+    request: PairAnalysisRequest | None = None,
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
+    request = request or PairAnalysisRequest()
     try:
         return _build_registered_pair_analysis(load_settings()).run(
             user_id=user_id,
             pair_id=pair_id,
+            ai_mode=request.ai_mode,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -145,6 +184,110 @@ def latest_pair_analysis_run(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/market-research/run")
+def run_market_research(
+    request: MarketResearchRunRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        run = _build_market_research_service(load_settings()).run(
+            user_id=user_id,
+            project_id=request.project_id,
+            ad_lp_pair_id=request.ad_lp_pair_id,
+            query=request.query,
+        )
+        return {"run_id": run["id"], "status": run["status"], "run": run}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/market-research/pairs/{pair_id}/latest")
+def latest_market_research(
+    pair_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_market_research_service(load_settings()).latest_for_pair(
+            user_id=user_id,
+            pair_id=pair_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/market-research/pairs/{pair_id}/runs")
+def list_market_research_runs(
+    pair_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_market_research_service(load_settings()).list_for_pair(
+            user_id=user_id,
+            pair_id=pair_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/outcomes")
+def create_outcome(
+    request: OutcomeCreateRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).create_outcome(
+            user_id=user_id,
+            project_id=request.project_id,
+            ad_lp_pair_id=request.ad_lp_pair_id,
+            source_ai_result_id=request.source_ai_result_id,
+            source_codex_task_id=request.source_codex_task_id,
+            title=request.title,
+            description=request.description,
+            before_metrics=request.before_metrics,
+            after_metrics=request.after_metrics,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/outcomes/pairs/{pair_id}")
+def list_outcomes_for_pair(
+    pair_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_outcome_service(load_settings()).get_outcomes_for_pair(user_id=user_id, pair_id=pair_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/outcomes/pairs/{pair_id}/latest")
+def latest_outcome_for_pair(
+    pair_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).get_latest_outcome_for_pair(user_id=user_id, pair_id=pair_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/outcomes/{outcome_id}")
+def update_outcome(
+    outcome_id: str,
+    request: OutcomeUpdateRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).update_outcome(
+            user_id=user_id,
+            outcome_id=outcome_id,
+            payload=request.model_dump(exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/orchestration/agents")
@@ -220,6 +363,28 @@ def generate_codex_task(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/orchestration/results/{result_id}/outcome")
+def generate_outcome_from_ai_result(
+    result_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).create_from_ai_result(user_id=user_id, result_id=result_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/orchestration/codex-tasks/{task_id}/outcome")
+def generate_outcome_from_codex_task(
+    task_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).create_from_codex_task(user_id=user_id, task_id=task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _build_workflow(
     ads: FullAdsCollection | None,
     lp: LPCollection | None,
@@ -254,9 +419,34 @@ def _build_registered_pair_analysis(settings: Settings) -> RegisteredPairAnalysi
         change_history_service=ChangeHistoryService(repository),
         feature_extractor=FeatureExtractor(),
         llm_client=_build_llm_client(settings),
+        openai_llm_client=_build_openai_llm_client(settings),
+        market_research_service=MarketResearchService(repository=repository),
+        outcome_service=ImprovementOutcomeService(repository=repository),
         orchestrator=AIOrchestrator(
             repository=repository,
             provider_registry=AIProviderRegistry(settings),
+        ),
+    )
+
+
+def _build_market_research_service(settings: Settings) -> MarketResearchService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return MarketResearchService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+    )
+
+
+def _build_outcome_service(settings: Settings) -> ImprovementOutcomeService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return ImprovementOutcomeService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
         ),
     )
 
@@ -280,6 +470,12 @@ def _build_llm_client(settings: Settings) -> DeterministicLLMClient | OpenAIJSON
         return OpenAIJSONClient(model=settings.openai_model)
 
     return DeterministicLLMClient()
+
+
+def _build_openai_llm_client(settings: Settings) -> OpenAIJSONClient | None:
+    if not settings.openai_model or not os.getenv("OPENAI_API_KEY"):
+        return None
+    return OpenAIJSONClient(model=settings.openai_model)
 
 
 def _build_pr_client(settings: Settings) -> InMemoryPullRequestClient | GitHubPRClient:

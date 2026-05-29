@@ -74,6 +74,16 @@ class DeterministicLLMClient:
             ad = user_payload.get("twitter_ad", {})
             lp = user_payload.get("landing_page", {})
             history = user_payload.get("history", [])
+            market = user_payload.get("market_research") or {}
+            market_summary = market.get("summary") or {}
+            main_pain_points = market_summary.get("main_pain_points") or []
+            main_competitors = market_summary.get("main_competitors") or []
+            opportunities = market_summary.get("opportunities") or []
+            outcomes = user_payload.get("improvement_outcomes") or {}
+            recent_outcomes = outcomes.get("recent_outcomes") or []
+            successful_patterns = outcomes.get("successful_patterns") or []
+            failed_patterns = outcomes.get("failed_patterns") or []
+            inconclusive_patterns = outcomes.get("inconclusive_patterns") or []
             history_note = (
                 "Recent edits exist, so test one field at a time."
                 if history
@@ -124,6 +134,54 @@ class DeterministicLLMClient:
                     "success_metric": "bounce_rate and cvr",
                     "duration_days": 7,
                 },
+                "market_insights": [
+                    {
+                        "finding": "Market research should shape the next hypothesis, not decide demand.",
+                        "evidence": ", ".join(main_pain_points[:3]) if main_pain_points else "No market research run is attached yet.",
+                        "recommendation": "Compare the ad promise and LP first viewport against the most repeated market pains.",
+                    },
+                ],
+                "competitor_summary": main_competitors[:5],
+                "pain_point_alignment": [
+                    {
+                        "finding": "Ad and LP should mention a concrete workflow pain.",
+                        "evidence": str(main_pain_points[0]) if main_pain_points else "Market pain points are not available.",
+                        "recommendation": "Use the next copy test to connect the product promise to that pain explicitly.",
+                    },
+                ],
+                "positioning_opportunities": opportunities[:5],
+                "market_alignment_score": 55 if market else 0,
+                "market_fit_analysis": (
+                    "Market research materials are available and should be used as directional context for message fit."
+                    if market
+                    else "No market research run is attached, so market fit analysis is limited to ad, LP, and history data."
+                ),
+                "recommended_positioning": opportunities[:3] or ["Run market research before locking positioning."],
+                "market_opportunities": opportunities[:5],
+                "outcome_insights": [
+                    {
+                        "finding": "Past measured outcomes should constrain the next recommendation.",
+                        "evidence": f"{len(recent_outcomes)} recent outcomes are available.",
+                        "recommendation": "Prefer changes that can be measured against CTR, CVR, bounce rate, and engagement metrics.",
+                    },
+                ],
+                "successful_improvement_patterns": [
+                    str(item.get("title") or item.get("summary") or "Positive measured pattern")
+                    for item in successful_patterns[:5]
+                ],
+                "failed_improvement_patterns": [
+                    str(item.get("title") or item.get("summary") or "Negative measured pattern")
+                    for item in failed_patterns[:5]
+                ],
+                "outcome_based_warnings": [
+                    "Do not repeat negative measured patterns without a materially different hypothesis.",
+                    *[
+                        str(item.get("summary") or item.get("title"))
+                        for item in inconclusive_patterns[:3]
+                        if item.get("summary") or item.get("title")
+                    ],
+                ],
+                "recommended_next_measurement": "Measure CTR, CVR, bounce_rate, session_duration, and scroll_depth after the next approved change.",
             }
 
         raise ValueError(f"Unsupported response model: {response_model.__name__}")

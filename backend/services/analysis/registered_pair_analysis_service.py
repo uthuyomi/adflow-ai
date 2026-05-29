@@ -13,7 +13,9 @@ from backend.services.ai.lp_improvement_service import LPImprovementResult
 from backend.services.ai.review_service import ReviewResult
 from backend.services.history.change_history_service import ChangeHistoryService
 from backend.services.lp.lp_collector import LPCollection
+from backend.services.market.market_research_service import MarketResearchService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
+from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 
@@ -52,6 +54,13 @@ class NextTestPlan(BaseModel):
     duration_days: int = Field(ge=1)
 
 
+class MarketAlignmentScore(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    score: int = Field(ge=0, le=100)
+    reason: str
+
+
 class HistoryAwareRecommendation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -62,6 +71,19 @@ class HistoryAwareRecommendation(BaseModel):
     lp_recommendations: list[FieldRecommendation]
     do_not_change: list[DoNotChangeItem]
     next_test_plan: NextTestPlan
+    market_insights: list[HistoryInsight] = Field(default_factory=list)
+    competitor_summary: list[str] = Field(default_factory=list)
+    pain_point_alignment: list[HistoryInsight] = Field(default_factory=list)
+    positioning_opportunities: list[str] = Field(default_factory=list)
+    market_alignment_score: int = Field(default=0, ge=0, le=100)
+    market_fit_analysis: str = ""
+    recommended_positioning: list[str] = Field(default_factory=list)
+    market_opportunities: list[str] = Field(default_factory=list)
+    outcome_insights: list[HistoryInsight] = Field(default_factory=list)
+    successful_improvement_patterns: list[str] = Field(default_factory=list)
+    failed_improvement_patterns: list[str] = Field(default_factory=list)
+    outcome_based_warnings: list[str] = Field(default_factory=list)
+    recommended_next_measurement: str = ""
 
 
 class LLMClient(Protocol):
@@ -83,15 +105,25 @@ class RegisteredPairAnalysisService:
         change_history_service: ChangeHistoryService,
         feature_extractor: FeatureExtractor,
         llm_client: LLMClient,
+        openai_llm_client: LLMClient | None = None,
+        market_research_service: MarketResearchService | None = None,
+        outcome_service: ImprovementOutcomeService | None = None,
         orchestrator: AIOrchestrator | None = None,
     ) -> None:
         self.repository = repository
         self.change_history_service = change_history_service
         self.feature_extractor = feature_extractor
         self.llm_client = llm_client
+        self.openai_llm_client = openai_llm_client
+        self.market_research_service = market_research_service
+        self.outcome_service = outcome_service
         self.orchestrator = orchestrator or AIOrchestrator(repository=repository)
 
-    def run(self, *, user_id: str, pair_id: str) -> dict[str, Any]:
+    def run(self, *, user_id: str, pair_id: str, ai_mode: str = "multi_provider") -> dict[str, Any]:
+        if ai_mode not in {"multi_provider", "openai_only"}:
+            raise ValueError("Invalid ai_mode.")
+        if ai_mode == "openai_only" and self.openai_llm_client is None:
+            raise ValueError("OPENAI_API_KEY and OPENAI_MODEL are required for openai_only analysis.")
         pair = self.repository.get_one("ad_lp_pairs", user_id=user_id, filters={"id": pair_id})
         twitter_ad = self.repository.get_one(
             "twitter_ads",
@@ -111,6 +143,21 @@ class RegisteredPairAnalysisService:
             order="created_at.desc",
             limit=5,
         )
+        market_research = (
+            self.market_research_service.latest_context_for_pair(user_id=user_id, pair_id=pair_id)
+            if self.market_research_service
+            else None
+        )
+        outcome_context = (
+            self.outcome_service.get_outcome_context_for_analysis(user_id=user_id, pair_id=pair_id)
+            if self.outcome_service
+            else {
+                "recent_outcomes": [],
+                "successful_patterns": [],
+                "failed_patterns": [],
+                "inconclusive_patterns": [],
+            }
+        )
 
         ads_collection = self._to_ads_collection(twitter_ad)
         lp_collection = self._to_lp_collection(landing_page)
@@ -125,23 +172,30 @@ class RegisteredPairAnalysisService:
             platform="twitter",
             objective="pair_analysis_with_review_and_diff_readiness",
             context={
+                "ai_mode": ai_mode,
                 "twitter_ad": twitter_ad,
                 "landing_page": landing_page,
                 "pair": pair,
                 "history": history,
                 "previous_runs": previous_runs,
+                "market_research": market_research,
+                "improvement_outcomes": outcome_context,
                 "features": features.model_dump(mode="json"),
                 "message_match_score": message_match_score,
                 "risk_level": risk_level,
             },
+            mode=ai_mode,
         )
 
         recommendation = self._recommend(
+            ai_mode=ai_mode,
             twitter_ad=twitter_ad,
             landing_page=landing_page,
             pair=pair,
             history=history,
             previous_runs=previous_runs,
+            market_research=market_research,
+            improvement_outcomes=outcome_context,
             features=features.model_dump(),
             message_match_score=message_match_score,
             risk_level=risk_level,
@@ -170,6 +224,8 @@ class RegisteredPairAnalysisService:
                 "review_result": review_result.model_dump(mode="json"),
                 "history_insights": {
                     **recommendation.model_dump(mode="json"),
+                    "ai_mode": ai_mode,
+                    "market_research_run_id": market_research.get("id") if market_research else None,
                     "orchestration_run_id": orchestration.run["id"],
                     "route_plan": [step.model_dump(mode="json") for step in orchestration.route_plan],
                     "agent_results": [
@@ -203,11 +259,18 @@ class RegisteredPairAnalysisService:
             raise ValueError("No analysis runs were found for this pair.")
         return runs[0]
 
-    def _recommend(self, **payload: Any) -> HistoryAwareRecommendation:
-        response = self.llm_client.generate_json(
+    def _recommend(self, *, ai_mode: str, **payload: Any) -> HistoryAwareRecommendation:
+        client = self.openai_llm_client if ai_mode == "openai_only" else self.llm_client
+        if client is None:
+            raise ValueError("OpenAI client is not configured.")
+        response = client.generate_json(
             system_prompt=(
                 "Analyze a registered X ad and landing page pair. Return only JSON matching "
                 "HistoryAwareRecommendation. Prioritize message mismatch between ad and LP. "
+                "Use market_research only as directional context for pains, competitors, search intent, "
+                "and positioning gaps. Do not make demand verdicts, success predictions, or revenue forecasts. "
+                "Use improvement_outcomes as measured history. Check successful, failed, and inconclusive patterns "
+                "before recommending a repeated change. Do not claim future success from past outcomes. "
                 "Use change history carefully: avoid confident claims when metrics are missing, "
                 "treat frequently changed fields as risky, and frame uncertain findings as hypotheses."
             ),

@@ -97,6 +97,14 @@ DEFAULT_AGENTS: tuple[AgentProfile, ...] = (
         default_tasks=("risk_review",),
     ),
     AgentProfile(
+        agent_key="openai_direct_strategist",
+        display_name="OpenAI Direct Strategist",
+        provider="openai",
+        role="openai_direct_analysis",
+        strengths=("single-provider analysis", "structured recommendations", "review continuity"),
+        default_tasks=("openai_pair_strategy", "openai_lp_review", "openai_risk_review"),
+    ),
+    AgentProfile(
         agent_key="codex_implementation",
         display_name="Codex Implementation",
         provider="codex",
@@ -166,6 +174,30 @@ class RuleBasedAIRouter:
         )
 
 
+class OpenAIOnlyAIRouter:
+    version = "openai-only.v1"
+
+    def route(self, *, platform: str, objective: str) -> list[RouteStep]:
+        steps = [
+            self._step("openai_pair_strategy", "Pair strategy and message-match diagnosis are handled by OpenAI."),
+            self._step("openai_lp_review", "Landing page review is handled by OpenAI."),
+            self._step("openai_risk_review", "Risk review stays separate while using OpenAI only."),
+        ]
+        if "implementation" in objective.lower() or "diff" in objective.lower():
+            steps.append(self._step("openai_implementation_plan", "Implementation planning is handled by OpenAI."))
+        return steps
+
+    @staticmethod
+    def _step(task: str, reason: str) -> RouteStep:
+        return RouteStep(
+            task=task,
+            agent_key="openai_direct_strategist",
+            provider="openai",
+            role="openai_direct_analysis",
+            reason=reason,
+        )
+
+
 class AIOrchestrator:
     def __init__(
         self,
@@ -207,12 +239,15 @@ class AIOrchestrator:
         platform: str,
         objective: str,
         context: dict[str, Any],
+        mode: str = "multi_provider",
     ) -> OrchestrationResult:
         self.ensure_default_agents(user_id=user_id)
+        router = OpenAIOnlyAIRouter() if mode == "openai_only" else self.router
         route_plan = self._rank_route_plan(
             user_id=user_id,
             platform=platform,
-            route_plan=self.router.route(platform=platform, objective=objective),
+            route_plan=router.route(platform=platform, objective=objective),
+            mode=mode,
         )
         run = self.repository.insert(
             "ai_orchestration_runs",
@@ -222,14 +257,23 @@ class AIOrchestrator:
                 "ad_lp_pair_id": pair_id,
                 "platform": platform,
                 "objective": objective,
-                "router_version": self.router.version,
+                "router_version": router.version,
                 "route_plan": [step.model_dump(mode="json") for step in route_plan],
-                "route_reason": self._route_reason(route_plan),
+                "route_reason": self._route_reason(route_plan, mode=mode),
                 "status": "running",
             },
         )
 
-        results = [self._execute(step, context) for step in route_plan]
+        try:
+            results = [self._execute(step, context) for step in route_plan]
+        except Exception:
+            self.repository.update(
+                "ai_orchestration_runs",
+                user_id=user_id,
+                filters={"id": run["id"]},
+                payload={"status": "failed", "completed_at": datetime.now(timezone.utc).isoformat()},
+            )
+            raise
         for result in results:
             inserted = self.repository.insert(
                 "ai_agent_results",
@@ -376,6 +420,7 @@ class AIOrchestrator:
                 system_prompt=self._system_prompt_for(step),
                 user_payload=payload,
                 schema=schema_for_agent_output(),
+                response_model=AgentOutput,
             )
             if provider
             else self._fallback_output(step, context)
@@ -467,7 +512,9 @@ class AIOrchestrator:
         if rows:
             self.repository.update("ai_agent_scorecards", user_id=user_id, filters={"id": rows[0]["id"]}, payload=payload)
 
-    def _rank_route_plan(self, *, user_id: str, platform: str, route_plan: list[RouteStep]) -> list[RouteStep]:
+    def _rank_route_plan(self, *, user_id: str, platform: str, route_plan: list[RouteStep], mode: str = "multi_provider") -> list[RouteStep]:
+        if mode == "openai_only":
+            return route_plan
         scorecards = self.repository.get_many("ai_agent_scorecards", user_id=user_id, filters={"platform": platform})
         scores = {item["agent_key"]: float(item.get("router_score") or item.get("average_score") or 0) for item in scorecards}
         ranked = sorted(
@@ -482,8 +529,10 @@ class AIOrchestrator:
         return ranked
 
     @staticmethod
-    def _route_reason(route_plan: list[RouteStep]) -> str:
+    def _route_reason(route_plan: list[RouteStep], mode: str = "multi_provider") -> str:
         names = ", ".join(f"{step.task}->{step.provider}" for step in route_plan)
+        if mode == "openai_only":
+            return f"OpenAI-only mode selected one provider path: {names}."
         return f"Rule-based router selected specialized desks: {names}."
 
     @staticmethod

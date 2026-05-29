@@ -15,6 +15,7 @@ class MockProvider:
         system_prompt: str,
         user_payload: dict[str, Any],
         schema: dict[str, Any],
+        response_model: type[Any] | None = None,
     ) -> dict[str, Any]:
         task = user_payload.get("task", "analysis")
         provider = user_payload.get("provider", "mock")

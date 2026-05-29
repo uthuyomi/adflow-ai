@@ -12,6 +12,8 @@ import type {
   JsonRecord,
   LandingPageVersion,
   LandingPage,
+  ImprovementOutcome,
+  MarketResearchRun,
   TwitterAd,
 } from "@/lib/types/adflow";
 
@@ -231,6 +233,28 @@ export async function listLandingPageVersions(lpId: string): Promise<LandingPage
     .order("version_number", { ascending: false });
   if (error) throw error;
   return (data ?? []) as LandingPageVersion[];
+}
+
+export async function listRecentMarketResearchRuns(limit = 10): Promise<MarketResearchRun[]> {
+  const supabase = getSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("market_research_runs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((run) => ({ ...run, sources: [], insights: [] })) as MarketResearchRun[];
+}
+
+export async function listRecentImprovementOutcomes(limit = 10): Promise<ImprovementOutcome[]> {
+  const supabase = getSupabaseBrowserClient();
+  const { data, error } = await supabase
+    .from("improvement_outcomes")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as ImprovementOutcome[];
 }
 
 async function nextLandingPageVersion(lpId: string) {

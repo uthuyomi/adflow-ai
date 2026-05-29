@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from pydantic import BaseModel
+
 
 class StructuredAIProvider(Protocol):
     provider_key: str
@@ -15,6 +17,7 @@ class StructuredAIProvider(Protocol):
         system_prompt: str,
         user_payload: dict[str, Any],
         schema: dict[str, Any],
+        response_model: type[BaseModel] | None = None,
     ) -> dict[str, Any]:
         ...
 

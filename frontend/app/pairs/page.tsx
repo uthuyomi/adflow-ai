@@ -20,7 +20,7 @@ function AnalyzeButton({ pairId }: { pairId: string }) {
   const run = useRunPairAnalysis(pairId);
   const analyze = async () => {
     try {
-      await run.mutateAsync();
+      await run.mutateAsync("multi_provider");
       toast.success("Analysis completed.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Analysis failed.");

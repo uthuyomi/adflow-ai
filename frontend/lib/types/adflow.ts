@@ -101,6 +101,8 @@ export type ChangeHistory = {
 };
 
 export type AIHistoryBasedRecommendation = {
+  ai_mode?: "multi_provider" | "openai_only";
+  market_research_run_id?: UUID | null;
   overall_diagnosis: string;
   likely_problem: string;
   history_based_insights: Array<{
@@ -134,6 +136,31 @@ export type AIHistoryBasedRecommendation = {
     success_metric: string;
     duration_days: number;
   };
+  market_insights?: Array<{
+    finding: string;
+    evidence: string;
+    recommendation: string;
+  }>;
+  competitor_summary?: string[];
+  pain_point_alignment?: Array<{
+    finding: string;
+    evidence: string;
+    recommendation: string;
+  }>;
+  positioning_opportunities?: string[];
+  market_alignment_score?: number;
+  market_fit_analysis?: string;
+  recommended_positioning?: string[];
+  market_opportunities?: string[];
+  outcome_insights?: Array<{
+    finding: string;
+    evidence: string;
+    recommendation: string;
+  }>;
+  successful_improvement_patterns?: string[];
+  failed_improvement_patterns?: string[];
+  outcome_based_warnings?: string[];
+  recommended_next_measurement?: string;
   orchestration_run_id?: UUID;
   route_plan?: AIOrchestrationRun["route_plan"];
   agent_results?: Array<{
@@ -266,6 +293,99 @@ export type CodexTaskPrompt = {
   prompt: JsonRecord;
   status: string;
   created_at: string;
+};
+
+export type MarketResearchSummary = {
+  market_overview: string;
+  main_pain_points: string[];
+  main_competitors: string[];
+  opportunities: string[];
+  warnings: string[];
+  positioning_gaps: string[];
+  social_research?: {
+    pain_points?: string[];
+    feature_requests?: string[];
+    positive_mentions?: string[];
+    negative_mentions?: string[];
+  };
+  search_research?: {
+    search_intents?: string[];
+    related_keywords?: string[];
+    competitor_keywords?: string[];
+  };
+  competitor_research?: Array<{
+    name?: string;
+    description?: string;
+    positioning?: string;
+    pricing?: string;
+    strengths?: string[];
+    weaknesses?: string[];
+  }>;
+};
+
+export type MarketResearchSource = {
+  id: UUID;
+  research_run_id: UUID;
+  source_type: "twitter" | "reddit" | "search" | "competitor" | "review" | "forum" | "youtube";
+  title: string;
+  url: string | null;
+  content: string;
+  sentiment: string | null;
+  relevance_score: number;
+  created_at: string;
+};
+
+export type MarketResearchInsight = {
+  id: UUID;
+  research_run_id: UUID;
+  category: string;
+  title: string;
+  description: string;
+  confidence: number;
+  created_at: string;
+};
+
+export type MarketResearchRun = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID;
+  query: string;
+  status: string;
+  summary: MarketResearchSummary | JsonRecord;
+  created_at: string;
+  sources: MarketResearchSource[];
+  insights: MarketResearchInsight[];
+};
+
+export type ImprovementOutcomeStatus =
+  | "pending"
+  | "implemented"
+  | "measured"
+  | "positive"
+  | "neutral"
+  | "negative"
+  | "inconclusive";
+
+export type ImprovementOutcome = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID;
+  source_ai_result_id: UUID | null;
+  source_codex_task_id: UUID | null;
+  title: string;
+  description: string | null;
+  implemented_at: string | null;
+  measured_at: string | null;
+  before_metrics: JsonRecord;
+  after_metrics: JsonRecord;
+  metric_delta: JsonRecord;
+  outcome_status: ImprovementOutcomeStatus;
+  outcome_summary: string | null;
+  learning_notes: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type EntityName =

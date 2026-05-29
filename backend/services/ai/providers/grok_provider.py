@@ -25,6 +25,7 @@ class GrokProvider:
         system_prompt: str,
         user_payload: dict[str, Any],
         schema: dict[str, Any],
+        response_model: type[Any] | None = None,
     ) -> dict[str, Any]:
         if not self.is_configured():
             return self.fallback.generate_structured(
