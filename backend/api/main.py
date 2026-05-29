@@ -78,7 +78,7 @@ class DecisionRequest(BaseModel):
 
 
 class PairAnalysisRequest(BaseModel):
-    ai_mode: Literal["multi_provider", "openai_only"] = "multi_provider"
+    ai_mode: Literal["multi_provider", "openai_only"] = "openai_only"
 
 
 class MarketResearchRunRequest(BaseModel):

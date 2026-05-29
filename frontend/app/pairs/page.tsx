@@ -15,12 +15,14 @@ import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAdLpPairMutations, useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
 import { useRunPairAnalysis } from "@/hooks/use-analysis-runs";
+import { useUiStore } from "@/lib/store";
 
 function AnalyzeButton({ pairId }: { pairId: string }) {
   const run = useRunPairAnalysis(pairId);
+  const aiMode = useUiStore((state) => state.analysisAIMode);
   const analyze = async () => {
     try {
-      await run.mutateAsync("multi_provider");
+      await run.mutateAsync(aiMode);
       toast.success("Analysis completed.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Analysis failed.");

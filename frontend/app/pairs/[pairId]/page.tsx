@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { BarChart3, BrainCircuit, KeyRound, Play, Search, TrendingUp } from "lucide-react";
+import { BarChart3, Play, Search, Settings, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -16,12 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAdLpPair } from "@/hooks/use-ad-lp-pairs";
-import { type AnalysisAIMode, useAnalysisRuns, useRunPairAnalysis } from "@/hooks/use-analysis-runs";
+import { useAnalysisRuns, useRunPairAnalysis } from "@/hooks/use-analysis-runs";
 import { usePairChangeHistory } from "@/hooks/use-change-history";
 import { useCreateImprovementOutcome, useCreateOutcomeFromAIResult, useImprovementOutcomes, useUpdateImprovementOutcome } from "@/hooks/use-improvement-outcomes";
 import { useLandingPageVersions } from "@/hooks/use-landing-pages";
 import { useLatestMarketResearch, useRunMarketResearch } from "@/hooks/use-market-research";
 import { useAIAgentDecision, useAIAgentResults, useGenerateCodexTask } from "@/hooks/use-orchestration";
+import { useUiStore } from "@/lib/store";
 import type { AIAgentResult, AIHistoryBasedRecommendation, ImprovementOutcome, ImprovementOutcomeStatus, JsonRecord, LandingPageVersion, MarketResearchRun, MarketResearchSummary } from "@/lib/types/adflow";
 
 export default function PairDetailPage() {
@@ -33,7 +34,7 @@ export default function PairDetailPage() {
   const run = useRunPairAnalysis(params.pairId);
   const decision = useAIAgentDecision();
   const codexTask = useGenerateCodexTask();
-  const [aiMode, setAiMode] = useState<AnalysisAIMode>("multi_provider");
+  const aiMode = useUiStore((state) => state.analysisAIMode);
   const [researchQuery, setResearchQuery] = useState("");
   const marketResearch = useLatestMarketResearch(params.pairId);
   const runMarketResearch = useRunMarketResearch(params.pairId);
@@ -81,30 +82,13 @@ export default function PairDetailPage() {
         description="Inspect the registered ad, LP, history, and pair-level AI recommendations."
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex h-10 rounded-md border border-border bg-background p-1">
-              <Button
-                aria-label="Use specialized AI router"
-                className="h-8 px-3"
-                onClick={() => setAiMode("multi_provider")}
-                size="sm"
-                type="button"
-                variant={aiMode === "multi_provider" ? "secondary" : "ghost"}
-              >
-                <BrainCircuit className="mr-2 h-4 w-4" />
-                AI OS
-              </Button>
-              <Button
-                aria-label="Use OpenAI API only"
-                className="h-8 px-3"
-                onClick={() => setAiMode("openai_only")}
-                size="sm"
-                type="button"
-                variant={aiMode === "openai_only" ? "secondary" : "ghost"}
-              >
-                <KeyRound className="mr-2 h-4 w-4" />
-                OpenAI
-              </Button>
-            </div>
+            <Badge variant="outline">{aiMode === "openai_only" ? "OpenAI only" : "Multi AI"}</Badge>
+            <Button asChild variant="outline">
+              <a href="/settings">
+                <Settings className="mr-2 h-4 w-4" />
+                AI settings
+              </a>
+            </Button>
             <Button onClick={analyze} disabled={run.isPending}>
               <Play className="mr-2 h-4 w-4" />
               {run.isPending ? "Running..." : "Run analysis"}

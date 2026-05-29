@@ -6,8 +6,7 @@ import { getApiBaseUrl } from "@/lib/api/client";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { listAnalysisRuns } from "@/lib/supabase/adflow-repository";
 import type { AnalysisRun } from "@/lib/types/adflow";
-
-export type AnalysisAIMode = "multi_provider" | "openai_only";
+import type { AnalysisAIMode } from "@/lib/store";
 
 export function useAnalysisRuns(pairId: string) {
   return useQuery({
@@ -21,7 +20,7 @@ export function useRunPairAnalysis(pairId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (aiMode?: AnalysisAIMode): Promise<AnalysisRun> => {
-      const selectedMode = aiMode ?? "multi_provider";
+      const selectedMode = aiMode ?? "openai_only";
       const supabase = getSupabaseBrowserClient();
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;

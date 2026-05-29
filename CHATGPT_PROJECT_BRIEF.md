@@ -4,7 +4,7 @@
 
 単なる広告文生成ツールではなく、広告とLPの整合性、過去の編集履歴、AIごとの役割分担、AI提案の採否判断、将来のPR化までを一連のワークフローとして管理します。
 
-現在は、複数AIを役割別に使い分ける `AI OS` モードと、OpenAI API だけでLLM分析を走らせる `OpenAI API only` モードの2系統を持ちます。ユーザーはペア詳細画面で分析実行前にモードを切り替えられます。
+現在は、複数AIを役割別に使い分ける `AI OS` モードと、OpenAI API だけでLLM分析を走らせる `OpenAI API only` モードの2系統を持ちます。AI実行モードはSettingsのアカウントAI設定で切り替えます。デフォルトは `OpenAI API only` です。
 
 さらに、広告改善前段の仮説形成レイヤとして `Market Research Layer` を持ちます。これは需要の有無や成功可否を断定する機能ではなく、課題、競合、検索意図、市場ギャップなどの判断材料を構造化して保存し、広告分析・LP分析・改善提案のコンテキストとして利用する機能です。
 
@@ -77,7 +77,7 @@ OpenAI APIだけで分析を走らせるモードです。
 - `openai_risk_review`
 - 必要に応じて `openai_implementation_plan`
 
-このモードではOpenAI APIが必須です。`OPENAI_API_KEY` と `OPENAI_MODEL` が未設定の場合はmock fallbackに逃がさず、エラーを返します。
+このモードがデフォルトです。OpenAI APIが必須で、`OPENAI_API_KEY` と `OPENAI_MODEL` が未設定の場合はmock fallbackに逃がさず、エラーを返します。
 
 ### 5. 採否判断とスコアカード
 
@@ -699,6 +699,19 @@ PRレビュー管理画面があります。
 - `/prs`: PRレビュー
 - `/settings`: 設定
 
+### Settings
+
+`/settings` では接続設定に加えて、アカウント単位のAI実行モードを切り替えます。
+
+AI mode:
+
+- OpenAI only
+- Multi AI
+
+初期値:
+
+- OpenAI only
+
 ## ペア詳細画面のタブ
 
 `/pairs/[pairId]` には以下のタブがあります。
@@ -815,14 +828,14 @@ LP version timelineを表示します。
 
 ## UIでのAIモード切り替え
 
-ペア詳細画面の分析ボタン横に、AI実行モード切り替えがあります。
+Settings画面の `Account AI settings` に、AI実行モード切り替えがあります。設定はローカルに保存され、Pair Analysis実行時に参照されます。
 
 選択肢:
 
-- `AI OS`: 複数providerをrouterで使い分ける
 - `OpenAI`: OpenAI APIのみを使う
+- `Multi AI`: 複数providerをrouterで使い分ける
 
-`Run analysis` を押すと、選択中のモードがAPIへ送信されます。
+デフォルトは `OpenAI` です。ペア詳細画面とペア一覧画面の `Run analysis` / `Analyze` は、このアカウント設定を使ってAPIへ `ai_mode` を送信します。
 
 送信payload:
 
@@ -1524,7 +1537,8 @@ python -m backend.api.main
 - OpenAI structured output
 - mock fallback
 - OpenAI API only分析モード
-- UIでのAI OS/OpenAI切り替え
+- SettingsでのAI modeトグル
+- OpenAI-onlyのデフォルト化
 - Market Research Layer
 - Market Research DB migration
 - Market Research API
@@ -1576,6 +1590,7 @@ python -m backend.api.main
 - `frontend/node_modules` と `.next` は解析・編集対象外
 - バックエンドにはまだ `requirements.txt` / `pyproject.toml` がない
 - `requests` はGrok/Gemini providerで必要
+- AI実行モードのフロント初期値はOpenAI-only
 - OpenAI-only modeは `OPENAI_API_KEY` と `OPENAI_MODEL` が必須
 - AI OS router modeはprovider未設定時にmock fallbackを使う
 - OpenAI-only modeはmock fallbackを使わず、OpenAI接続失敗時はエラーにする
