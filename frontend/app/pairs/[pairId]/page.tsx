@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { BarChart3, Play, Search, Settings, TrendingUp } from "lucide-react";
+import { BarChart3, Bell, BrainCircuit, ClipboardList, Database, Map, PackageSearch, Play, RefreshCw, Search, Settings, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -18,12 +18,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAdLpPair } from "@/hooks/use-ad-lp-pairs";
 import { useAnalysisRuns, useRunPairAnalysis } from "@/hooks/use-analysis-runs";
 import { usePairChangeHistory } from "@/hooks/use-change-history";
+import { useCollectEvidence, useEvidenceByPair, useEvidenceClusters } from "@/hooks/use-evidence";
 import { useCreateImprovementOutcome, useCreateOutcomeFromAIResult, useImprovementOutcomes, useUpdateImprovementOutcome } from "@/hooks/use-improvement-outcomes";
 import { useLandingPageVersions } from "@/hooks/use-landing-pages";
 import { useLatestMarketResearch, useRunMarketResearch } from "@/hooks/use-market-research";
+import { useIntelligenceAlerts, useMonitoringRuns, useRunMonitoring, useUpdateIntelligenceAlert } from "@/hooks/use-monitoring";
 import { useAIAgentDecision, useAIAgentResults, useGenerateCodexTask } from "@/hooks/use-orchestration";
+import { useConvertProductBacklogToCodexTask, useDecideProductBacklogItem, useProductBacklog } from "@/hooks/use-product-backlog";
+import { useProductProfile, useUpsertProductProfile } from "@/hooks/use-product-profile";
+import { useLatestProductReview, useRunProductReview } from "@/hooks/use-product-review";
+import { useGenerateRoadmap, useLatestRoadmap } from "@/hooks/use-roadmap";
+import { useLearningPatterns, useRefreshLearningPatterns } from "@/hooks/use-learning-patterns";
 import { useUiStore } from "@/lib/store";
-import type { AIAgentResult, AIHistoryBasedRecommendation, ImprovementOutcome, ImprovementOutcomeStatus, JsonRecord, LandingPageVersion, MarketResearchRun, MarketResearchSummary } from "@/lib/types/adflow";
+import type { AIAgentResult, AIHistoryBasedRecommendation, EvidenceCluster, EvidenceSource, ImprovementOutcome, ImprovementOutcomeStatus, IntelligenceAlert, JsonRecord, LandingPageVersion, LearningPattern, MarketResearchRun, MarketResearchSummary, MonitoringRun, ProductBacklogItem, ProductProfile, ProductReviewRun, ProductRoadmap } from "@/lib/types/adflow";
 
 export default function PairDetailPage() {
   const params = useParams<{ pairId: string }>();
@@ -36,8 +43,33 @@ export default function PairDetailPage() {
   const codexTask = useGenerateCodexTask();
   const aiMode = useUiStore((state) => state.analysisAIMode);
   const [researchQuery, setResearchQuery] = useState("");
+  const [evidenceQuery, setEvidenceQuery] = useState("");
+  const [manualEvidence, setManualEvidence] = useState("");
+  const [productReviewQuery, setProductReviewQuery] = useState("");
+  const [monitoringQuery, setMonitoringQuery] = useState("");
+  const [monitoringType, setMonitoringType] = useState("market");
+  const [reviewMode, setReviewMode] = useState<"quick" | "standard" | "deep">("standard");
+  const [maxEvidenceItems, setMaxEvidenceItems] = useState(500);
   const marketResearch = useLatestMarketResearch(params.pairId);
   const runMarketResearch = useRunMarketResearch(params.pairId);
+  const evidence = useEvidenceByPair(params.pairId);
+  const clusters = useEvidenceClusters(pair.data?.project_id, params.pairId);
+  const collectEvidenceMutation = useCollectEvidence(params.pairId, pair.data?.project_id);
+  const latestProductReview = useLatestProductReview(pair.data?.project_id, params.pairId);
+  const runProductReviewMutation = useRunProductReview(pair.data?.project_id, params.pairId);
+  const productProfile = useProductProfile(pair.data?.project_id);
+  const upsertProductProfile = useUpsertProductProfile(pair.data?.project_id);
+  const productBacklog = useProductBacklog(pair.data?.project_id);
+  const decideBacklog = useDecideProductBacklogItem(pair.data?.project_id);
+  const convertBacklog = useConvertProductBacklogToCodexTask(pair.data?.project_id);
+  const latestRoadmap = useLatestRoadmap(pair.data?.project_id);
+  const generateRoadmap = useGenerateRoadmap(pair.data?.project_id);
+  const monitoringRuns = useMonitoringRuns(pair.data?.project_id);
+  const intelligenceAlerts = useIntelligenceAlerts(pair.data?.project_id);
+  const runMonitoring = useRunMonitoring(pair.data?.project_id, params.pairId);
+  const updateAlert = useUpdateIntelligenceAlert(pair.data?.project_id);
+  const learningPatterns = useLearningPatterns(pair.data?.project_id);
+  const refreshLearning = useRefreshLearningPatterns(pair.data?.project_id);
   const outcomes = useImprovementOutcomes(params.pairId);
   const createOutcome = useCreateImprovementOutcome(params.pairId);
   const updateOutcome = useUpdateImprovementOutcome(params.pairId);
@@ -71,6 +103,68 @@ export default function PairDetailPage() {
       toast.error(error instanceof Error ? error.message : "Market research failed.");
     }
   };
+  const collectEvidenceForPair = async () => {
+    try {
+      await collectEvidenceMutation.mutateAsync({
+        query: evidenceQuery.trim() || defaultResearchQuery || pair.data?.name || "product evidence",
+        sources: manualEvidence.trim() ? ["manual", "mock", "web_stub"] : ["mock", "web_stub"],
+        max_items: maxEvidenceItems,
+        manual_items: manualEvidence.trim()
+          ? [{ source_type: "manual", title: "Manual evidence paste", content: manualEvidence.trim() }]
+          : [],
+      });
+      toast.success("Evidence collected.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Evidence collection failed.");
+    }
+  };
+  const runProductReview = async () => {
+    try {
+      await runProductReviewMutation.mutateAsync({
+        query: productReviewQuery.trim() || defaultResearchQuery || pair.data?.name || "product review",
+        review_mode: reviewMode,
+        evidence_collection_mode: "manual_or_mock",
+        max_evidence_items: maxEvidenceItems,
+        manual_evidence_items: manualEvidence.trim()
+          ? [{ source_type: "manual", title: "Manual product review evidence", content: manualEvidence.trim() }]
+          : [],
+      });
+      toast.success("Product review completed and backlog candidates were saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Product review failed.");
+    }
+  };
+  const regenerateRoadmap = async () => {
+    try {
+      await generateRoadmap.mutateAsync({
+        product_review_run_id: latestProductReview.data?.id ?? null,
+        title: `${pair.data?.name ?? "Product"} roadmap`,
+      });
+      toast.success("Roadmap generated.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Roadmap generation failed.");
+    }
+  };
+  const runMonitoringCheck = async () => {
+    try {
+      await runMonitoring.mutateAsync({
+        query: monitoringQuery.trim() || defaultResearchQuery || pair.data?.name || "market monitoring",
+        monitoring_type: monitoringType,
+        max_evidence_items: maxEvidenceItems,
+      });
+      toast.success("Monitoring run completed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Monitoring failed.");
+    }
+  };
+  const refreshLearningPatterns = async () => {
+    try {
+      await refreshLearning.mutateAsync();
+      toast.success("Learning patterns refreshed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Learning refresh failed.");
+    }
+  };
 
   if (pair.isLoading || runs.isLoading || history.isLoading || versions.isLoading || agentResults.isLoading) return <PageSkeleton />;
   if (pair.isError || !pair.data) return <ErrorState />;
@@ -91,11 +185,58 @@ export default function PairDetailPage() {
             </Button>
             <Button onClick={analyze} disabled={run.isPending}>
               <Play className="mr-2 h-4 w-4" />
-              {run.isPending ? "Running..." : "Run analysis"}
+              {run.isPending ? "Running..." : "Run Ad Improvement"}
+            </Button>
+            <Button variant="outline" onClick={runProductReview} disabled={runProductReviewMutation.isPending || !pair.data.project_id}>
+              <PackageSearch className="mr-2 h-4 w-4" />
+              {runProductReviewMutation.isPending ? "Reviewing..." : "Run Product Review"}
             </Button>
           </div>
         }
       />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-semibold">High-frequency Growth Loop</div>
+              <p className="mt-1 text-sm text-muted-foreground">広告・LP・CTA・訴求の改善を高頻度で分析します。</p>
+            </div>
+            <Button onClick={analyze} disabled={run.isPending} size="sm">
+              <Play className="mr-2 h-4 w-4" />
+              Run Ad Improvement
+            </Button>
+          </div>
+        </Card>
+        <Card className="p-4">
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">Low-frequency Product Loop</div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  外部証拠・競合・不満・機能適合をもとに、低頻度のプロダクト改善候補を作成します。
+                </p>
+              </div>
+              <Button variant="outline" onClick={runProductReview} disabled={runProductReviewMutation.isPending || !pair.data.project_id} size="sm">
+                <PackageSearch className="mr-2 h-4 w-4" />
+                Run Product Review
+              </Button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={reviewMode} onChange={(event) => setReviewMode(event.target.value as "quick" | "standard" | "deep")}>
+                <option value="quick">quick</option>
+                <option value="standard">standard</option>
+                <option value="deep">deep</option>
+              </select>
+              <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={maxEvidenceItems} onChange={(event) => setMaxEvidenceItems(Number(event.target.value))}>
+                {[100, 500, 1000, 3000].map((value) => <option value={value} key={value}>{value} evidence items</option>)}
+              </select>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              このレビューは実装指示ではありません。改善候補をBacklogに保存し、優先度を確認してからCodex taskへ変換してください。
+            </p>
+          </div>
+        </Card>
+      </div>
       {latest ? (
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Score" value={latest.score ?? 0} suffix="" />
@@ -119,6 +260,12 @@ export default function PairDetailPage() {
           <TabsTrigger value="runs">Analysis</TabsTrigger>
           <TabsTrigger value="comparison">AI Comparison</TabsTrigger>
           <TabsTrigger value="market">Market Research</TabsTrigger>
+          <TabsTrigger value="evidence">Evidence</TabsTrigger>
+          <TabsTrigger value="product-review">Product Review</TabsTrigger>
+          <TabsTrigger value="product-backlog">Product Backlog</TabsTrigger>
+          <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+          <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
+          <TabsTrigger value="learning">Learning</TabsTrigger>
           <TabsTrigger value="outcomes">Outcomes</TabsTrigger>
           <TabsTrigger value="versions">Versions</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
@@ -215,6 +362,105 @@ export default function PairDetailPage() {
             onQueryChange={setResearchQuery}
             onRun={runResearch}
             placeholder={defaultResearchQuery || pair.data.name}
+          />
+        </TabsContent>
+        <TabsContent value="evidence">
+          <EvidencePanel
+            clusters={clusters.data ?? []}
+            evidence={evidence.data ?? []}
+            isCollecting={collectEvidenceMutation.isPending}
+            isLoading={evidence.isLoading || clusters.isLoading}
+            manualEvidence={manualEvidence}
+            query={evidenceQuery}
+            onCollect={collectEvidenceForPair}
+            onManualEvidenceChange={setManualEvidence}
+            onQueryChange={setEvidenceQuery}
+            placeholder={defaultResearchQuery || pair.data.name}
+          />
+        </TabsContent>
+        <TabsContent value="product-review">
+          <div className="space-y-4">
+            <ProductProfilePanel
+              defaultName={pair.data.name}
+              isSaving={upsertProductProfile.isPending}
+              profile={productProfile.data ?? undefined}
+              projectId={pair.data.project_id}
+              onSave={async (payload) => {
+                try {
+                  await upsertProductProfile.mutateAsync(payload);
+                  toast.success("Product profile saved.");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Product profile save failed.");
+                }
+              }}
+            />
+            <ProductReviewPanel
+              isLoading={latestProductReview.isLoading}
+              review={latestProductReview.data}
+              clusters={clusters.data ?? []}
+            />
+          </div>
+        </TabsContent>
+        <TabsContent value="product-backlog">
+          <ProductBacklogPanel
+            backlog={productBacklog.data ?? []}
+            isLoading={productBacklog.isLoading}
+            isDeciding={decideBacklog.isPending}
+            isConverting={convertBacklog.isPending}
+            onDecision={async (itemId, status) => {
+              try {
+                await decideBacklog.mutateAsync({ itemId, status, reason: `Marked ${status} from pair detail.` });
+                toast.success(`Backlog item marked ${status}.`);
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Backlog decision failed.");
+              }
+            }}
+            onConvert={async (itemId) => {
+              try {
+                await convertBacklog.mutateAsync(itemId);
+                toast.success("Codex task prompt created from backlog item.");
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Codex task conversion failed.");
+              }
+            }}
+          />
+        </TabsContent>
+        <TabsContent value="roadmap">
+          <RoadmapPanel
+            isGenerating={generateRoadmap.isPending}
+            isLoading={latestRoadmap.isLoading}
+            roadmap={latestRoadmap.data}
+            onGenerate={regenerateRoadmap}
+          />
+        </TabsContent>
+        <TabsContent value="monitoring">
+          <MonitoringPanel
+            alerts={intelligenceAlerts.data ?? []}
+            isLoading={monitoringRuns.isLoading || intelligenceAlerts.isLoading}
+            isRunning={runMonitoring.isPending}
+            isUpdating={updateAlert.isPending}
+            monitoringType={monitoringType}
+            query={monitoringQuery}
+            runs={monitoringRuns.data ?? []}
+            onMonitoringTypeChange={setMonitoringType}
+            onQueryChange={setMonitoringQuery}
+            onRun={runMonitoringCheck}
+            onUpdateAlert={async (alertId, status) => {
+              try {
+                await updateAlert.mutateAsync({ alertId, payload: { status } });
+                toast.success(`Alert marked ${status}.`);
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Alert update failed.");
+              }
+            }}
+          />
+        </TabsContent>
+        <TabsContent value="learning">
+          <LearningPanel
+            isLoading={learningPatterns.isLoading}
+            isRefreshing={refreshLearning.isPending}
+            patterns={learningPatterns.data ?? []}
+            onRefresh={refreshLearningPatterns}
           />
         </TabsContent>
         <TabsContent value="outcomes">
@@ -582,6 +828,533 @@ function MarketResearchPanel({
   );
 }
 
+function EvidencePanel({
+  evidence,
+  clusters,
+  query,
+  manualEvidence,
+  placeholder,
+  isLoading,
+  isCollecting,
+  onQueryChange,
+  onManualEvidenceChange,
+  onCollect,
+}: {
+  evidence: EvidenceSource[];
+  clusters: EvidenceCluster[];
+  query: string;
+  manualEvidence: string;
+  placeholder: string;
+  isLoading: boolean;
+  isCollecting: boolean;
+  onQueryChange: (value: string) => void;
+  onManualEvidenceChange: (value: string) => void;
+  onCollect: () => Promise<void>;
+}) {
+  if (isLoading) return <PageSkeleton />;
+  const sourceCounts = evidence.reduce<Record<string, number>>((acc, item) => {
+    acc[item.source_type] = (acc[item.source_type] ?? 0) + 1;
+    return acc;
+  }, {});
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+          <Input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={placeholder} />
+          <Button onClick={onCollect} disabled={isCollecting}>
+            <Database className="mr-2 h-4 w-4" />
+            {isCollecting ? "Collecting..." : "Collect evidence"}
+          </Button>
+        </div>
+        <textarea
+          className="mt-3 min-h-28 w-full rounded-md border border-input bg-background p-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onChange={(event) => onManualEvidenceChange(event.target.value)}
+          placeholder="Paste manual evidence here when you have user comments, reviews, search snippets, or competitor notes."
+          value={manualEvidence}
+        />
+      </Card>
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="p-4">
+          <div className="text-sm text-muted-foreground">Evidence count</div>
+          <div className="mt-2 text-2xl font-semibold">{evidence.length}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-sm text-muted-foreground">Cluster count</div>
+          <div className="mt-2 text-2xl font-semibold">{clusters.length}</div>
+        </Card>
+        <Card className="p-4">
+          <div className="text-sm text-muted-foreground">Source types</div>
+          <div className="mt-2 text-2xl font-semibold">{Object.keys(sourceCounts).length}</div>
+        </Card>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Top clusters</CardTitle></CardHeader>
+          <CardContent className="grid gap-3">
+            {clusters.length ? clusters.slice(0, 8).map((cluster) => (
+              <div className="rounded-md border border-border p-3 text-sm" key={cluster.id}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium">{cluster.label}</div>
+                  <Badge variant="outline">{cluster.cluster_type}</Badge>
+                </div>
+                <p className="mt-2 text-muted-foreground">{cluster.description}</p>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Evidence: {cluster.evidence_count} / Confidence: {Math.round((cluster.confidence ?? 0) * 100)}%
+                </div>
+              </div>
+            )) : <EmptyState title="No clusters" description="Collect evidence to generate pain, intent, competitor, and review clusters." />}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Representative evidence</CardTitle></CardHeader>
+          <CardContent className="grid gap-3">
+            {evidence.length ? evidence.slice(0, 10).map((item) => (
+              <div className="rounded-md border border-border p-3 text-sm" key={item.id}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium">{item.title ?? item.source_type}</div>
+                  <Badge variant="outline">{item.source_type}</Badge>
+                </div>
+                <p className="mt-2 text-muted-foreground">{item.normalized_content ?? item.raw_content}</p>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Relevance: {Math.round(item.relevance_score ?? 0)} / Sentiment: {item.sentiment ?? "unknown"}
+                </div>
+              </div>
+            )) : <EmptyState title="No evidence" description="Collect mock, stub, or manual evidence to build a review corpus." />}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function ProductProfilePanel({
+  profile,
+  projectId,
+  defaultName,
+  isSaving,
+  onSave,
+}: {
+  profile?: ProductProfile;
+  projectId?: string | null;
+  defaultName: string;
+  isSaving: boolean;
+  onSave: (payload: {
+    project_id: string;
+    product_name: string;
+    product_url?: string | null;
+    short_description?: string | null;
+    target_users?: string | null;
+    core_value?: string | null;
+    current_features?: string[];
+    pricing_model?: string | null;
+    current_stage?: string | null;
+    positioning_notes?: string | null;
+    known_constraints?: string | null;
+    do_not_build?: string[];
+  }) => Promise<void>;
+}) {
+  const [productName, setProductName] = useState(profile?.product_name ?? defaultName);
+  const [productUrl, setProductUrl] = useState(profile?.product_url ?? "");
+  const [shortDescription, setShortDescription] = useState(profile?.short_description ?? "");
+  const [targetUsers, setTargetUsers] = useState(profile?.target_users ?? "");
+  const [coreValue, setCoreValue] = useState(profile?.core_value ?? "");
+  const [currentFeatures, setCurrentFeatures] = useState((profile?.current_features ?? []).join("\n"));
+  const [pricingModel, setPricingModel] = useState(profile?.pricing_model ?? "");
+  const [currentStage, setCurrentStage] = useState(profile?.current_stage ?? "");
+  const [positioningNotes, setPositioningNotes] = useState(profile?.positioning_notes ?? "");
+  const [knownConstraints, setKnownConstraints] = useState(profile?.known_constraints ?? "");
+  const [doNotBuild, setDoNotBuild] = useState((profile?.do_not_build ?? []).join("\n"));
+
+  if (!projectId) return null;
+
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold">Product Profile</div>
+          <p className="mt-1 text-sm text-muted-foreground">Product Review uses this as product context.</p>
+        </div>
+        <Button
+          disabled={isSaving || !productName.trim()}
+          onClick={() => onSave({
+            project_id: projectId,
+            product_name: productName,
+            product_url: productUrl || null,
+            short_description: shortDescription || null,
+            target_users: targetUsers || null,
+            core_value: coreValue || null,
+            current_features: lines(currentFeatures),
+            pricing_model: pricingModel || null,
+            current_stage: currentStage || null,
+            positioning_notes: positioningNotes || null,
+            known_constraints: knownConstraints || null,
+            do_not_build: lines(doNotBuild),
+          })}
+        >
+          {isSaving ? "Saving..." : "Save profile"}
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <Input value={productName} onChange={(event) => setProductName(event.target.value)} placeholder="Product name" />
+        <Input value={productUrl} onChange={(event) => setProductUrl(event.target.value)} placeholder="Product URL" />
+        <Input value={targetUsers} onChange={(event) => setTargetUsers(event.target.value)} placeholder="Target users" />
+        <Input value={coreValue} onChange={(event) => setCoreValue(event.target.value)} placeholder="Core value" />
+        <Input value={pricingModel} onChange={(event) => setPricingModel(event.target.value)} placeholder="Pricing model" />
+        <Input value={currentStage} onChange={(event) => setCurrentStage(event.target.value)} placeholder="Current stage" />
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <textarea className="min-h-24 rounded-md border border-input bg-background p-3 text-sm" value={shortDescription} onChange={(event) => setShortDescription(event.target.value)} placeholder="Short description" />
+        <textarea className="min-h-24 rounded-md border border-input bg-background p-3 text-sm" value={positioningNotes} onChange={(event) => setPositioningNotes(event.target.value)} placeholder="Positioning notes" />
+        <textarea className="min-h-24 rounded-md border border-input bg-background p-3 text-sm" value={currentFeatures} onChange={(event) => setCurrentFeatures(event.target.value)} placeholder="Current features, one per line" />
+        <textarea className="min-h-24 rounded-md border border-input bg-background p-3 text-sm" value={doNotBuild} onChange={(event) => setDoNotBuild(event.target.value)} placeholder="Do not build, one per line" />
+      </div>
+      <Input className="mt-3" value={knownConstraints} onChange={(event) => setKnownConstraints(event.target.value)} placeholder="Known constraints" />
+    </Card>
+  );
+}
+
+function ProductReviewPanel({
+  review,
+  clusters,
+  isLoading,
+}: {
+  review?: ProductReviewRun;
+  clusters: EvidenceCluster[];
+  isLoading: boolean;
+}) {
+  if (isLoading) return <PageSkeleton />;
+  if (!review) {
+    return <EmptyState title="No product review" description="Run a low-frequency product review to create opportunity scores and backlog candidates." />;
+  }
+  const summary = review.summary ?? {};
+  const scores = [
+    ["Need", review.need_score],
+    ["Pain", review.pain_score],
+    ["Gap", review.gap_score],
+    ["Product fit", review.product_fit_score],
+    ["Message fit", review.message_fit_score],
+    ["Acquisition fit", review.acquisition_fit_score],
+    ["Evidence confidence", review.evidence_confidence],
+    ["Cost risk", review.implementation_cost_risk],
+  ] as const;
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold">Product Opportunity Score</div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This is an improvement priority score from current evidence, not a demand, success, or revenue verdict.
+            </p>
+          </div>
+          <div className="text-3xl font-semibold">{Math.round(review.product_opportunity_score ?? 0)}/100</div>
+        </div>
+        {(review.evidence_confidence ?? 0) < 50 ? (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            証拠数が少ないため、このレビューの信頼度は低めです。
+          </div>
+        ) : null}
+      </Card>
+      <div className="grid gap-4 md:grid-cols-4">
+        {scores.map(([label, value]) => (
+          <Card className="p-4" key={label}>
+            <div className="text-sm text-muted-foreground">{label}</div>
+            <div className="mt-2 text-xl font-semibold">{Math.round(value ?? 0)}</div>
+            <Progress className="mt-3" value={Math.max(0, Math.min(100, value ?? 0))} />
+          </Card>
+        ))}
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="p-4">
+          <div className="font-semibold">Executive Summary</div>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{String(summary.executive_summary ?? "No summary.")}</p>
+        </Card>
+        <Card className="p-4">
+          <div className="font-semibold">Recommended positioning</div>
+          <div className="mt-3 grid gap-2">
+            {listOf(summary.recommended_positioning).map((item) => <div className="rounded-md border border-border p-3 text-sm" key={item}>{item}</div>)}
+          </div>
+        </Card>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <ResearchSection title="Strongest Pain Points" items={listOf(summary.strongest_pain_points)} badge="Evidence" />
+        <ResearchSection title="Competitor Gaps" items={listOf(summary.competitor_gaps)} badge="Directional" />
+        <ResearchSection title="Do Not Build" items={review.do_not_build ?? listOf(summary.do_not_build)} badge="Guardrail" />
+      </div>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Cluster list</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          {(review.clusters ?? clusters).slice(0, 8).map((cluster) => (
+            <div className="rounded-md border border-border p-3 text-sm" key={cluster.id}>
+              <div className="font-medium">{cluster.label}</div>
+              <p className="mt-2 text-muted-foreground">{cluster.description}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ProductBacklogPanel({
+  backlog,
+  isLoading,
+  isDeciding,
+  isConverting,
+  onDecision,
+  onConvert,
+}: {
+  backlog: ProductBacklogItem[];
+  isLoading: boolean;
+  isDeciding: boolean;
+  isConverting: boolean;
+  onDecision: (itemId: string, status: string) => Promise<void>;
+  onConvert: (itemId: string) => Promise<void>;
+}) {
+  if (isLoading) return <PageSkeleton />;
+  if (!backlog.length) {
+    return <EmptyState title="No product backlog" description="Run Product Review to save product-level improvement candidates." />;
+  }
+  return (
+    <div className="space-y-4">
+      <Card className="p-4 text-sm text-muted-foreground">
+        Product Review results stay as backlog candidates. Codex task conversion requires a manual ready_for_codex decision.
+      </Card>
+      <div className="grid gap-4 xl:grid-cols-2">
+        {backlog.map((item) => (
+          <Card key={item.id} className="p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold">{item.title}</div>
+                <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant={item.priority === "critical" || item.priority === "high" ? "warning" : "secondary"}>{item.priority}</Badge>
+                <Badge variant="outline">{item.status}</Badge>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
+              <MetricDelta label="Impact" value={item.impact_score} />
+              <MetricDelta label="Cost" value={item.cost_score} />
+              <MetricDelta label="Confidence" value={item.confidence_score} />
+              <MetricDelta label="Evidence" value={item.evidence_count} />
+            </div>
+            <div className="mt-3 text-sm">
+              <div className="text-xs text-muted-foreground">Target area</div>
+              <div>{item.target_area ?? item.category}</div>
+            </div>
+            {item.rationale ? <p className="mt-3 text-sm text-muted-foreground">{item.rationale}</p> : null}
+            {item.risk_notes ? <p className="mt-2 text-sm text-muted-foreground">{item.risk_notes}</p> : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" disabled={isDeciding} onClick={() => onDecision(item.id, "approved")}>Approve</Button>
+              <Button size="sm" variant="outline" disabled={isDeciding} onClick={() => onDecision(item.id, "rejected")}>Reject</Button>
+              <Button size="sm" variant="outline" disabled={isDeciding} onClick={() => onDecision(item.id, "deferred")}>Defer</Button>
+              <Button size="sm" disabled={isDeciding} onClick={() => onDecision(item.id, "ready_for_codex")}>Ready for Codex</Button>
+              <Button size="sm" variant="outline" disabled={isConverting || item.status !== "ready_for_codex"} onClick={() => onConvert(item.id)}>
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Convert to Codex Task
+              </Button>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RoadmapPanel({
+  roadmap,
+  isLoading,
+  isGenerating,
+  onGenerate,
+}: {
+  roadmap?: ProductRoadmap;
+  isLoading: boolean;
+  isGenerating: boolean;
+  onGenerate: () => Promise<void>;
+}) {
+  if (isLoading) return <PageSkeleton />;
+  const sections = [
+    ["Now", roadmap?.now_items ?? []],
+    ["Next", roadmap?.next_items ?? []],
+    ["Later", roadmap?.later_items ?? []],
+    ["Do Not Build", roadmap?.do_not_build_items ?? []],
+    ["Needs More Evidence", roadmap?.needs_more_evidence_items ?? []],
+  ] as const;
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold">{roadmap?.title ?? "Product roadmap"}</div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {roadmap?.summary ?? "Generate a roadmap from backlog candidates. This is planning support, not automatic implementation."}
+            </p>
+          </div>
+          <Button onClick={onGenerate} disabled={isGenerating}>
+            <Map className="mr-2 h-4 w-4" />
+            {isGenerating ? "Generating..." : "Regenerate roadmap"}
+          </Button>
+        </div>
+      </Card>
+      {roadmap ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {sections.map(([title, items]) => (
+            <Card key={title}>
+              <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+              <CardContent className="grid gap-2">
+                {items.length ? items.map((item, index) => (
+                  <div className="rounded-md border border-border p-3 text-sm" key={`${title}-${index}`}>
+                    <div className="font-medium">{String(item.title ?? "Roadmap item")}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {String(item.priority ?? "priority unknown")} / confidence {String(item.confidence_score ?? "-")}
+                    </div>
+                  </div>
+                )) : <div className="text-sm text-muted-foreground">No items.</div>}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No roadmap" description="Generate a roadmap after Product Review creates backlog candidates." />
+      )}
+    </div>
+  );
+}
+
+function MonitoringPanel({
+  runs,
+  alerts,
+  query,
+  monitoringType,
+  isLoading,
+  isRunning,
+  isUpdating,
+  onQueryChange,
+  onMonitoringTypeChange,
+  onRun,
+  onUpdateAlert,
+}: {
+  runs: MonitoringRun[];
+  alerts: IntelligenceAlert[];
+  query: string;
+  monitoringType: string;
+  isLoading: boolean;
+  isRunning: boolean;
+  isUpdating: boolean;
+  onQueryChange: (value: string) => void;
+  onMonitoringTypeChange: (value: string) => void;
+  onRun: () => Promise<void>;
+  onUpdateAlert: (alertId: string, status: string) => Promise<void>;
+}) {
+  if (isLoading) return <PageSkeleton />;
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="grid gap-3 lg:grid-cols-[1fr_220px_auto]">
+          <Input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Monitoring query" />
+          <select className="h-10 rounded-md border border-input bg-background px-3 text-sm" value={monitoringType} onChange={(event) => onMonitoringTypeChange(event.target.value)}>
+            {["market", "competitor", "review", "search_intent", "pain_trend"].map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <Button onClick={onRun} disabled={isRunning}>
+            <Bell className="mr-2 h-4 w-4" />
+            {isRunning ? "Monitoring..." : "Run monitoring"}
+          </Button>
+        </div>
+      </Card>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Open Intelligence Alerts</CardTitle></CardHeader>
+          <CardContent className="grid gap-3">
+            {alerts.length ? alerts.map((alert) => (
+              <div className="rounded-md border border-border p-3 text-sm" key={alert.id}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium">{alert.title}</div>
+                  <Badge variant={alert.severity === "high" ? "warning" : "secondary"}>{alert.severity}</Badge>
+                </div>
+                <p className="mt-2 text-muted-foreground">{alert.description}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" disabled={isUpdating} onClick={() => onUpdateAlert(alert.id, "reviewed")}>Mark reviewed</Button>
+                  <Button size="sm" variant="outline" disabled={isUpdating} onClick={() => onUpdateAlert(alert.id, "closed")}>Close</Button>
+                </div>
+              </div>
+            )) : <EmptyState title="No open alerts" description="Run monitoring to detect pain spikes, competitor shifts, and opportunity signals." />}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Monitoring runs</CardTitle></CardHeader>
+          <CardContent className="grid gap-3">
+            {runs.length ? runs.slice(0, 8).map((run) => (
+              <div className="rounded-md border border-border p-3 text-sm" key={run.id}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-medium">{run.query ?? run.monitoring_type}</div>
+                  <Badge variant="outline">{run.status}</Badge>
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {run.monitoring_type} / evidence {run.evidence_count} / alerts {run.alerts?.length ?? 0}
+                </div>
+              </div>
+            )) : <div className="text-sm text-muted-foreground">No monitoring runs yet.</div>}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function LearningPanel({
+  patterns,
+  isLoading,
+  isRefreshing,
+  onRefresh,
+}: {
+  patterns: LearningPattern[];
+  isLoading: boolean;
+  isRefreshing: boolean;
+  onRefresh: () => Promise<void>;
+}) {
+  if (isLoading) return <PageSkeleton />;
+  return (
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold">Learning Patterns</div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Outcome results bias future recommendations. They are learning signals, not guarantees.
+            </p>
+          </div>
+          <Button onClick={onRefresh} disabled={isRefreshing}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            {isRefreshing ? "Refreshing..." : "Refresh patterns"}
+          </Button>
+        </div>
+      </Card>
+      {patterns.length ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {patterns.map((pattern) => (
+            <Card className="p-4" key={pattern.id}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-semibold">{pattern.title}</div>
+                <Badge variant="outline">{pattern.pattern_type}</Badge>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">{pattern.description ?? "No description."}</p>
+              <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
+                <MetricDelta label="Positive" value={pattern.success_count} />
+                <MetricDelta label="Negative" value={pattern.failure_count} />
+                <MetricDelta label="Inconclusive" value={pattern.inconclusive_count} />
+                <MetricDelta label="Bias" value={pattern.recommendation_bias} />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No learning patterns" description="Refresh after measured outcomes exist." />
+      )}
+    </div>
+  );
+}
+
 function OutcomesPanel({
   outcomes,
   pairId,
@@ -763,6 +1536,14 @@ function parseMetrics(value: string): JsonRecord {
   } catch {
     return {};
   }
+}
+
+function listOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function lines(value: string): string[] {
+  return value.split("\n").map((item) => item.trim()).filter(Boolean);
 }
 
 function ResearchSection({ title, items, badge }: { title: string; items: string[]; badge: string }) {

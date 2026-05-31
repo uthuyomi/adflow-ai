@@ -14,6 +14,12 @@ import type {
   LandingPage,
   ImprovementOutcome,
   MarketResearchRun,
+  ProductBacklogItem,
+  ProductReviewRun,
+  EvidenceCluster,
+  IntelligenceAlert,
+  LearningPattern,
+  ProductRoadmap,
   TwitterAd,
 } from "@/lib/types/adflow";
 
@@ -23,6 +29,15 @@ export type EntityMap = {
   landing_pages: LandingPage;
   ad_lp_pairs: AdLpPair;
 };
+
+async function safeDashboardList<T>(loader: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await loader();
+  } catch (error) {
+    console.warn("Dashboard Supabase query failed. Returning empty data.", error);
+    return [];
+  }
+}
 
 const entityLabels: Record<EntityName, string> = {
   ad_projects: "ad_project",
@@ -236,25 +251,109 @@ export async function listLandingPageVersions(lpId: string): Promise<LandingPage
 }
 
 export async function listRecentMarketResearchRuns(limit = 10): Promise<MarketResearchRun[]> {
-  const supabase = getSupabaseBrowserClient();
-  const { data, error } = await supabase
-    .from("market_research_runs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return (data ?? []).map((run) => ({ ...run, sources: [], insights: [] })) as MarketResearchRun[];
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("market_research_runs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []).map((run) => ({ ...run, sources: [], insights: [] })) as MarketResearchRun[];
+  });
 }
 
 export async function listRecentImprovementOutcomes(limit = 10): Promise<ImprovementOutcome[]> {
-  const supabase = getSupabaseBrowserClient();
-  const { data, error } = await supabase
-    .from("improvement_outcomes")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-  return (data ?? []) as ImprovementOutcome[];
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("improvement_outcomes")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as ImprovementOutcome[];
+  });
+}
+
+export async function listRecentProductReviewRuns(limit = 10): Promise<ProductReviewRun[]> {
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("product_review_runs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as ProductReviewRun[];
+  });
+}
+
+export async function listHighPriorityProductBacklog(limit = 10): Promise<ProductBacklogItem[]> {
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("product_improvement_backlog")
+      .select("*")
+      .in("priority", ["critical", "high"])
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as ProductBacklogItem[];
+  });
+}
+
+export async function listTopEvidenceClusters(limit = 10): Promise<EvidenceCluster[]> {
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("evidence_clusters")
+      .select("*")
+      .order("evidence_count", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as EvidenceCluster[];
+  });
+}
+
+export async function listRecentRoadmaps(limit = 10): Promise<ProductRoadmap[]> {
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("product_roadmaps")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as ProductRoadmap[];
+  });
+}
+
+export async function listOpenIntelligenceAlerts(limit = 10): Promise<IntelligenceAlert[]> {
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("intelligence_alerts")
+      .select("*")
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as IntelligenceAlert[];
+  });
+}
+
+export async function listRecentLearningPatterns(limit = 10): Promise<LearningPattern[]> {
+  return safeDashboardList(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("learning_patterns")
+      .select("*")
+      .order("recommendation_bias", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as LearningPattern[];
+  });
 }
 
 async function nextLandingPageVersion(lpId: string) {

@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.services.evidence.evidence_service import EvidenceService
+from backend.services.evidence.models import EvidenceCollectionRequest
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 SourceType = Literal["twitter", "reddit", "search", "competitor", "review", "forum", "youtube"]
@@ -41,11 +43,19 @@ class MarketResearchSummary(BaseModel):
     social_research: dict[str, list[str]]
     search_research: dict[str, list[str]]
     competitor_research: list[dict[str, Any]]
+    evidence_count: int = 0
+    source_diversity: dict[str, int] = Field(default_factory=dict)
+    top_clusters: list[dict[str, Any]] = Field(default_factory=list)
+    pain_cluster_summary: list[str] = Field(default_factory=list)
+    competitor_cluster_summary: list[str] = Field(default_factory=list)
+    intent_cluster_summary: list[str] = Field(default_factory=list)
+    evidence_confidence: float = 0
 
 
 class MarketResearchService:
     def __init__(self, *, repository: SupabaseRepository) -> None:
         self.repository = repository
+        self.evidence_service = EvidenceService(repository=repository)
 
     def run(
         self,
@@ -74,8 +84,24 @@ class MarketResearchService:
         )
         try:
             sources = self._collect_sources(query=query, pair=pair)
+            evidence_result = self.evidence_service.collect(
+                user_id=user_id,
+                request=EvidenceCollectionRequest(
+                    project_id=project_id,
+                    ad_lp_pair_id=ad_lp_pair_id,
+                    market_research_run_id=run["id"],
+                    query=query,
+                    sources=["mock", "web_stub", "competitor_stub"],
+                    max_items=80,
+                ),
+            )
             insights = self._generate_insights(query=query, sources=sources)
-            summary = self._summarize(query=query, sources=sources, insights=insights)
+            summary = self._summarize(
+                query=query,
+                sources=sources,
+                insights=insights,
+                evidence=evidence_result.model_dump(mode="json"),
+            )
             for source in sources:
                 self.repository.insert(
                     "market_research_sources",
@@ -260,6 +286,7 @@ class MarketResearchService:
         query: str,
         sources: list[MarketResearchSource],
         insights: list[MarketResearchInsight],
+        evidence: dict[str, Any] | None = None,
     ) -> MarketResearchSummary:
         competitors = [source.title for source in sources if source.source_type == "competitor"]
         pain_points = [
@@ -268,6 +295,12 @@ class MarketResearchService:
             "Weak notification or handoff confidence",
             "Mobile workflow usability",
         ]
+        evidence = evidence or {}
+        clusters = list(evidence.get("clusters") or [])
+        source_diversity: dict[str, int] = {}
+        for source in evidence.get("sources") or []:
+            source_type = str(source.get("source_type") or "unknown")
+            source_diversity[source_type] = source_diversity.get(source_type, 0) + 1
         return MarketResearchSummary(
             market_overview=(
                 f"Research materials for {query} show evaluation criteria around workflow fit, setup effort, "
@@ -312,6 +345,19 @@ class MarketResearchService:
                 for source in sources
                 if source.source_type == "competitor"
             ],
+            evidence_count=int(evidence.get("evidence_count") or 0),
+            source_diversity=source_diversity,
+            top_clusters=clusters[:6],
+            pain_cluster_summary=[
+                str(cluster.get("label")) for cluster in clusters if cluster.get("cluster_type") in {"pain", "ux_issue"}
+            ][:4],
+            competitor_cluster_summary=[
+                str(cluster.get("label")) for cluster in clusters if cluster.get("cluster_type") == "competitor"
+            ][:4],
+            intent_cluster_summary=[
+                str(cluster.get("label")) for cluster in clusters if cluster.get("cluster_type") == "intent"
+            ][:4],
+            evidence_confidence=min(0.9, (float(evidence.get("evidence_count") or 0) / 100)),
         )
 
 

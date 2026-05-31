@@ -17,6 +17,7 @@ const labels: Record<string, string> = {
   "/ads": "X Ads",
   "/lps": "Landing Pages",
   "/pairs": "Ad LP Pairs",
+  "/idea-lab": "Idea Lab",
   "/orchestration": "AI OS",
   "/history": "History",
   "/campaigns": "Campaigns",

@@ -103,6 +103,12 @@ export type ChangeHistory = {
 export type AIHistoryBasedRecommendation = {
   ai_mode?: "multi_provider" | "openai_only";
   market_research_run_id?: UUID | null;
+  product_review_run_id?: UUID | null;
+  product_opportunity_score?: number | null;
+  top_evidence_clusters?: EvidenceCluster[];
+  product_risks?: string[];
+  backlog_suggestions?: string[];
+  product_context_summary?: string;
   overall_diagnosis: string;
   likely_problem: string;
   history_based_insights: Array<{
@@ -284,7 +290,7 @@ export type CodexTaskPrompt = {
   id: UUID;
   user_id: UUID;
   project_id: UUID | null;
-  source_ai_result_id: UUID;
+  source_ai_result_id: UUID | null;
   title: string;
   target_files_hint: string[];
   implementation_goal: string;
@@ -321,6 +327,13 @@ export type MarketResearchSummary = {
     strengths?: string[];
     weaknesses?: string[];
   }>;
+  evidence_count?: number;
+  source_diversity?: Record<string, number>;
+  top_clusters?: EvidenceCluster[];
+  pain_cluster_summary?: string[];
+  competitor_cluster_summary?: string[];
+  intent_cluster_summary?: string[];
+  evidence_confidence?: number;
 };
 
 export type MarketResearchSource = {
@@ -386,6 +399,391 @@ export type ImprovementOutcome = {
   learning_notes: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type EvidenceSource = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID | null;
+  market_research_run_id: UUID | null;
+  product_review_run_id: UUID | null;
+  source_type: string;
+  source_platform: string | null;
+  source_url: string | null;
+  title: string | null;
+  author: string | null;
+  published_at: string | null;
+  collected_at: string;
+  query: string | null;
+  language: string | null;
+  region: string | null;
+  raw_content: string;
+  normalized_content: string | null;
+  content_hash: string | null;
+  sentiment: string | null;
+  relevance_score: number | null;
+  credibility_score: number | null;
+  spam_score: number | null;
+  metadata: JsonRecord;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EvidenceCluster = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID | null;
+  market_research_run_id: UUID | null;
+  product_review_run_id: UUID | null;
+  cluster_type: string;
+  label: string;
+  description: string | null;
+  evidence_count: number;
+  severity_score: number | null;
+  frequency_score: number | null;
+  urgency_score: number | null;
+  opportunity_score: number | null;
+  confidence: number | null;
+  representative_evidence_ids: string[];
+  keywords: string[];
+  metadata: JsonRecord;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProductProfile = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID;
+  product_name: string;
+  product_url: string | null;
+  short_description: string | null;
+  target_users: string | null;
+  core_value: string | null;
+  current_features: string[];
+  pricing_model: string | null;
+  current_stage: string | null;
+  positioning_notes: string | null;
+  known_constraints: string | null;
+  do_not_build: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProductOpportunityScore = {
+  product_opportunity_score: number | null;
+  need_score: number | null;
+  pain_score: number | null;
+  gap_score: number | null;
+  product_fit_score: number | null;
+  message_fit_score: number | null;
+  acquisition_fit_score: number | null;
+  evidence_confidence: number | null;
+  implementation_cost_risk: number | null;
+};
+
+export type ProductReviewRun = ProductOpportunityScore & {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID;
+  ad_lp_pair_id: UUID | null;
+  query: string | null;
+  status: string;
+  review_mode: "quick" | "standard" | "deep" | string;
+  evidence_collection_mode: string;
+  evidence_count: number;
+  cluster_count: number;
+  summary: JsonRecord & {
+    executive_summary?: string;
+    strongest_pain_points?: string[];
+    competitor_gaps?: string[];
+    product_fit_analysis?: string;
+    recommended_positioning?: string[];
+    roadmap_candidates?: string[];
+    do_not_build?: string[];
+  };
+  recommendations: JsonRecord;
+  roadmap_candidates: string[];
+  do_not_build: string[];
+  created_at: string;
+  completed_at: string | null;
+  updated_at: string;
+  clusters?: EvidenceCluster[];
+  backlog_items?: ProductBacklogItem[];
+};
+
+export type ProductBacklogItem = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID;
+  ad_lp_pair_id: UUID | null;
+  product_review_run_id: UUID | null;
+  title: string;
+  description: string;
+  category: string;
+  priority: "critical" | "high" | "medium" | "low" | string;
+  status:
+    | "candidate"
+    | "needs_review"
+    | "approved"
+    | "rejected"
+    | "deferred"
+    | "ready_for_codex"
+    | "converted_to_codex_task"
+    | "implemented"
+    | "measured"
+    | string;
+  impact_score: number | null;
+  cost_score: number | null;
+  confidence_score: number | null;
+  evidence_count: number;
+  impact_cost_ratio: number | null;
+  target_area: string | null;
+  affected_files_hint: string[];
+  acceptance_criteria: string[];
+  evidence_cluster_ids: string[];
+  evidence_source_ids: string[];
+  rationale: string | null;
+  risk_notes: string | null;
+  do_not_do: string | null;
+  source: string;
+  converted_codex_task_id: UUID | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProductRoadmap = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID;
+  product_review_run_id: UUID | null;
+  title: string;
+  summary: string | null;
+  now_items: JsonRecord[];
+  next_items: JsonRecord[];
+  later_items: JsonRecord[];
+  do_not_build_items: JsonRecord[];
+  needs_more_evidence_items: JsonRecord[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type MonitoringRun = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID;
+  ad_lp_pair_id: UUID | null;
+  query: string | null;
+  status: string;
+  monitoring_type: "market" | "competitor" | "review" | "search_intent" | "pain_trend" | string;
+  evidence_count: number;
+  new_cluster_count: number;
+  changed_cluster_count: number;
+  summary: JsonRecord;
+  alerts: JsonRecord[];
+  created_at: string;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type IntelligenceAlert = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID;
+  ad_lp_pair_id: UUID | null;
+  monitoring_run_id: UUID | null;
+  alert_type: string;
+  severity: "low" | "medium" | "high" | "critical" | string;
+  title: string;
+  description: string;
+  evidence_cluster_ids: string[];
+  evidence_source_ids: string[];
+  status: "open" | "reviewed" | "closed" | string;
+  metadata: JsonRecord;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LearningPattern = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID;
+  pattern_type: string;
+  target_area: string | null;
+  title: string;
+  description: string | null;
+  source_outcome_ids: string[];
+  source_backlog_item_ids: string[];
+  success_count: number;
+  failure_count: number;
+  inconclusive_count: number;
+  confidence_score: number | null;
+  recommendation_bias: number | null;
+  metadata: JsonRecord;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProductReviewRequest = {
+  project_id: UUID;
+  ad_lp_pair_id?: UUID | null;
+  query: string;
+  review_mode: "quick" | "standard" | "deep";
+  evidence_collection_mode?: string;
+  max_evidence_items: number;
+  manual_evidence_items?: JsonRecord[];
+};
+
+export type IdeaSession = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID | null;
+  title: string;
+  status: string;
+  memory: JsonRecord;
+  created_at: string;
+  updated_at: string;
+  profile?: IdeaProfile | null;
+  latest_review?: IdeaReviewRun | null;
+  roadmap?: IdeaRoadmap | null;
+};
+
+export type IdeaMessage = {
+  id: UUID;
+  user_id: UUID;
+  session_id: UUID;
+  role: "user" | "assistant" | string;
+  content: string;
+  metadata: JsonRecord;
+  created_at: string;
+};
+
+export type IdeaProfile = {
+  id: UUID;
+  user_id: UUID;
+  session_id: UUID;
+  title: string;
+  target_users: string | null;
+  problem_statement: string | null;
+  proposed_solution: string | null;
+  market_category: string | null;
+  monetization_model: string | null;
+  estimated_complexity: string | null;
+  constraints: string | null;
+  notes: string | null;
+  evidence_summary: JsonRecord;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IdeaOpportunityScore = {
+  need_score: number | null;
+  pain_score: number | null;
+  competition_score: number | null;
+  monetization_score: number | null;
+  implementation_score: number | null;
+  confidence_score: number | null;
+  idea_opportunity_score: number | null;
+  decision: "build" | "maybe" | "avoid" | string | null;
+  decision_reason: string | null;
+};
+
+export type IdeaReviewRun = IdeaOpportunityScore & {
+  id: UUID;
+  user_id: UUID;
+  session_id: UUID;
+  status: string;
+  summary: JsonRecord;
+  mvp_plan: JsonRecord & {
+    must_have?: string[];
+    should_have?: string[];
+    do_not_build?: string[];
+  };
+  evidence_count: number;
+  cluster_count: number;
+  created_at: string;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type IdeaBacklogItem = {
+  id: UUID;
+  user_id: UUID;
+  session_id: UUID;
+  idea_review_run_id: UUID | null;
+  title: string;
+  description: string;
+  category: string;
+  priority: string;
+  status: string;
+  impact_score: number | null;
+  confidence_score: number | null;
+  evidence_count: number;
+  rationale: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IdeaRoadmap = {
+  id: UUID;
+  user_id: UUID;
+  session_id: UUID;
+  idea_review_run_id: UUID | null;
+  now_items: JsonRecord[];
+  next_items: JsonRecord[];
+  later_items: JsonRecord[];
+  summary: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IdeaAlert = {
+  alert_type: string;
+  severity: string;
+  title: string;
+  description: string;
+};
+
+export type IdeaMonitoringRun = {
+  id: UUID;
+  user_id: UUID;
+  session_id: UUID;
+  query: string | null;
+  status: string;
+  monitoring_type: string;
+  evidence_count: number;
+  alerts: IdeaAlert[];
+  summary: JsonRecord;
+  created_at: string;
+  completed_at: string | null;
+  updated_at: string;
+};
+
+export type IdeaDiscoveryResult = {
+  query: string;
+  evidence_count: number;
+  top_opportunities: Array<{
+    title: string;
+    need: number | null;
+    pain: number | null;
+    competition: string;
+    monetization: string;
+    evidence: string;
+  }>;
+};
+
+export type IdeaCompareResult = {
+  summary: string;
+  ideas: Array<{
+    title: string;
+    need: number;
+    competition: number;
+    monetization: number;
+    complexity: string;
+    evidence: string;
+  }>;
 };
 
 export type EntityName =

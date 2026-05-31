@@ -32,14 +32,51 @@ from backend.services.analytics.storage_service import (
     InMemoryCollectionStorage,
     SupabaseCollectionStorage,
 )
+from backend.services.evidence.evidence_service import EvidenceService
+from backend.services.evidence.models import EvidenceCollectionRequest, EvidenceSearchRequest
 from backend.services.github.github_pr_client import GitHubPRClient
 from backend.services.github.in_memory_pr_client import InMemoryPullRequestClient
 from backend.services.github.pr_service import PRService
 from backend.services.history.change_history_service import ChangeHistoryService
+from backend.services.idea_lab.chat_service import IdeaChatService
+from backend.services.idea_lab.idea_backlog_service import IdeaBacklogService
+from backend.services.idea_lab.idea_compare_service import IdeaCompareService
+from backend.services.idea_lab.idea_discovery_service import IdeaDiscoveryService
+from backend.services.idea_lab.idea_monitoring_service import IdeaMonitoringService
+from backend.services.idea_lab.idea_review_service import IdeaReviewService
+from backend.services.idea_lab.idea_roadmap_service import IdeaRoadmapService
+from backend.services.idea_lab.models import (
+    ConvertToProductRequest,
+    IdeaChatRequest,
+    IdeaCompareRequest,
+    IdeaDiscoverRequest,
+    IdeaMonitoringRequest,
+    IdeaReviewRequest,
+    IdeaSessionCreateRequest,
+)
+from backend.services.idea_lab.product_conversion_service import ProductConversionService
+from backend.services.idea_lab.session_service import IdeaSessionService
 from backend.services.lp.lp_collector import LPCollection, LPCollector
 from backend.services.market.market_research_service import MarketResearchService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
+from backend.services.product_intelligence.learning_service import LearningService
+from backend.services.product_intelligence.models import (
+    IntelligenceAlertUpdateRequest,
+    MonitoringRunRequest,
+    RoadmapGenerateRequest,
+)
+from backend.services.product_intelligence.monitoring_service import MonitoringService
+from backend.services.product_intelligence.roadmap_service import ProductRoadmapService
+from backend.services.product_review.backlog_service import ProductBacklogService
+from backend.services.product_review.models import (
+    ProductBacklogDecisionRequest,
+    ProductProfilePayload,
+    ProductProfileUpdate,
+    ProductReviewRequest,
+)
+from backend.services.product_review.product_profile_service import ProductProfileService
+from backend.services.product_review.product_review_service import ProductReviewService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 app = FastAPI(title="AdFlow AI")
@@ -108,6 +145,23 @@ class OutcomeUpdateRequest(BaseModel):
     learning_notes: str | None = None
     title: str | None = None
     description: str | None = None
+
+
+class BacklogUpdateRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    category: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    impact_score: float | None = None
+    cost_score: float | None = None
+    confidence_score: float | None = None
+    target_area: str | None = None
+    affected_files_hint: list[str] | None = None
+    acceptance_criteria: list[str] | None = None
+    rationale: str | None = None
+    risk_notes: str | None = None
+    do_not_do: str | None = None
 
 
 @app.get("/health")
@@ -227,6 +281,323 @@ def list_market_research_runs(
             user_id=user_id,
             pair_id=pair_id,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/evidence/collect")
+def collect_evidence(
+    request: EvidenceCollectionRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_evidence_service(load_settings()).collect(user_id=user_id, request=request).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/evidence/projects/{project_id}")
+def list_evidence_by_project(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_evidence_service(load_settings()).list_by_project(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/evidence/pairs/{pair_id}")
+def list_evidence_by_pair(
+    pair_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_evidence_service(load_settings()).list_by_pair(user_id=user_id, pair_id=pair_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/evidence/projects/{project_id}/clusters")
+def list_evidence_clusters(
+    project_id: str,
+    pair_id: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_evidence_service(load_settings()).list_clusters(
+            user_id=user_id,
+            project_id=project_id,
+            pair_id=pair_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/evidence/search")
+def search_evidence(
+    request: EvidenceSearchRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_evidence_service(load_settings()).search(user_id=user_id, request=request).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/product-profile/projects/{project_id}")
+def get_product_profile(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any] | None:
+    try:
+        return _build_product_profile_service(load_settings()).get_by_project(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/product-profile")
+def upsert_product_profile(
+    request: ProductProfilePayload,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_profile_service(load_settings()).upsert(user_id=user_id, payload=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/product-profile/{profile_id}")
+def update_product_profile(
+    profile_id: str,
+    request: ProductProfileUpdate,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_profile_service(load_settings()).update(user_id=user_id, profile_id=profile_id, payload=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/product-review/run")
+def run_product_review(
+    request: ProductReviewRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        run = _build_product_review_service(load_settings()).run_product_review(user_id=user_id, request=request)
+        return {
+            "run_id": run["id"],
+            "status": run["status"],
+            "product_opportunity_score": run.get("product_opportunity_score"),
+            "backlog_count": len(run.get("backlog_items") or []),
+            "run": run,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/product-review/projects/{project_id}/runs")
+def list_product_review_runs(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_product_review_service(load_settings()).list_product_review_runs(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/product-review/projects/{project_id}/latest")
+def latest_product_review(
+    project_id: str,
+    pair_id: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_review_service(load_settings()).get_latest_product_review(
+            user_id=user_id,
+            project_id=project_id,
+            pair_id=pair_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/product-review/runs/{run_id}")
+def get_product_review_run(
+    run_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_review_service(load_settings()).get_product_review_run(user_id=user_id, run_id=run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/product-backlog/projects/{project_id}")
+def list_product_backlog(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_product_backlog_service(load_settings()).list_for_project(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/product-backlog/{item_id}")
+def update_product_backlog_item(
+    item_id: str,
+    request: BacklogUpdateRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_backlog_service(load_settings()).update(
+            user_id=user_id,
+            item_id=item_id,
+            payload=request.model_dump(mode="json", exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/product-backlog/{item_id}/decision")
+def decide_product_backlog_item(
+    item_id: str,
+    request: ProductBacklogDecisionRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_backlog_service(load_settings()).decide(
+            user_id=user_id,
+            item_id=item_id,
+            status=request.status,
+            reason=request.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/product-backlog/{item_id}/codex-task")
+def convert_product_backlog_to_codex_task(
+    item_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_backlog_service(load_settings()).convert_to_codex_task(user_id=user_id, item_id=item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/roadmap/projects/{project_id}/generate")
+def generate_product_roadmap(
+    project_id: str,
+    request: RoadmapGenerateRequest | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    request = request or RoadmapGenerateRequest()
+    try:
+        return _build_roadmap_service(load_settings()).generate(
+            user_id=user_id,
+            project_id=project_id,
+            product_review_run_id=request.product_review_run_id,
+            title=request.title,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/roadmap/projects/{project_id}/latest")
+def latest_product_roadmap(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_roadmap_service(load_settings()).latest_for_project(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/roadmap/projects/{project_id}")
+def list_product_roadmaps(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_roadmap_service(load_settings()).list_for_project(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/monitoring/run")
+def run_monitoring(
+    request: MonitoringRunRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_monitoring_service(load_settings()).run(user_id=user_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/monitoring/projects/{project_id}/runs")
+def list_monitoring_runs(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_monitoring_service(load_settings()).list_runs(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/monitoring/projects/{project_id}/alerts")
+def list_intelligence_alerts(
+    project_id: str,
+    status: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_monitoring_service(load_settings()).list_alerts(user_id=user_id, project_id=project_id, status=status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/monitoring/alerts/{alert_id}")
+def update_intelligence_alert(
+    alert_id: str,
+    request: IntelligenceAlertUpdateRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_monitoring_service(load_settings()).update_alert(
+            user_id=user_id,
+            alert_id=alert_id,
+            payload=request.model_dump(mode="json", exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/learning/projects/{project_id}/refresh")
+def refresh_learning_patterns(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_learning_service(load_settings()).refresh(user_id=user_id, project_id=project_id).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/learning/projects/{project_id}/patterns")
+def list_learning_patterns(
+    project_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_learning_service(load_settings()).list_patterns(user_id=user_id, project_id=project_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -385,6 +756,154 @@ def generate_outcome_from_codex_task(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/idea-lab/sessions")
+def create_idea_session(
+    request: IdeaSessionCreateRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_session_service(load_settings()).create(user_id=user_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/idea-lab/sessions")
+def list_idea_sessions(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_idea_session_service(load_settings()).list(user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/idea-lab/sessions/{session_id}")
+def get_idea_session(
+    session_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_session_service(load_settings()).get(user_id=user_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/idea-lab/chat")
+def run_idea_chat(
+    request: IdeaChatRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_chat_service(load_settings()).chat(user_id=user_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/idea-lab/messages/{session_id}")
+def list_idea_messages(
+    session_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_idea_session_service(load_settings()).messages(user_id=user_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/idea-lab/review")
+def run_idea_review(
+    request: IdeaReviewRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_review_service(load_settings()).run(user_id=user_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/idea-lab/review/{session_id}")
+def get_idea_review(
+    session_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_review_service(load_settings()).latest(user_id=user_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/idea-lab/discover")
+def discover_ideas(
+    request: IdeaDiscoverRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_discovery_service(load_settings()).discover(user_id=user_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/idea-lab/compare")
+def compare_ideas(
+    request: IdeaCompareRequest,
+    _user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    return IdeaCompareService().compare(request=request)
+
+
+@app.get("/idea-lab/backlog/{session_id}")
+def list_idea_backlog(
+    session_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_idea_backlog_service(load_settings()).list(user_id=user_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/idea-lab/roadmap/{session_id}")
+def get_idea_roadmap(
+    session_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_roadmap_service(load_settings()).latest(user_id=user_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/idea-lab/monitoring/run")
+def run_idea_monitoring(
+    request: IdeaMonitoringRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_idea_monitoring_service(load_settings()).run(user_id=user_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/idea-lab/monitoring/{session_id}")
+def list_idea_monitoring(
+    session_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_idea_monitoring_service(load_settings()).list(user_id=user_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/idea-lab/convert-to-product")
+def convert_idea_to_product(
+    request: ConvertToProductRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_product_conversion_service(load_settings()).convert(user_id=user_id, request=request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _build_workflow(
     ads: FullAdsCollection | None,
     lp: LPCollection | None,
@@ -422,6 +941,10 @@ def _build_registered_pair_analysis(settings: Settings) -> RegisteredPairAnalysi
         openai_llm_client=_build_openai_llm_client(settings),
         market_research_service=MarketResearchService(repository=repository),
         outcome_service=ImprovementOutcomeService(repository=repository),
+        product_review_service=ProductReviewService(repository=repository, settings=settings),
+        roadmap_service=ProductRoadmapService(repository=repository),
+        monitoring_service=MonitoringService(repository=repository, settings=settings),
+        learning_service=LearningService(repository=repository),
         orchestrator=AIOrchestrator(
             repository=repository,
             provider_registry=AIProviderRegistry(settings),
@@ -451,6 +974,124 @@ def _build_outcome_service(settings: Settings) -> ImprovementOutcomeService:
     )
 
 
+def _build_evidence_service(settings: Settings) -> EvidenceService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return EvidenceService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+        settings=settings,
+    )
+
+
+def _build_product_profile_service(settings: Settings) -> ProductProfileService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return ProductProfileService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+    )
+
+
+def _build_product_review_service(settings: Settings) -> ProductReviewService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return ProductReviewService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+        settings=settings,
+    )
+
+
+def _build_product_backlog_service(settings: Settings) -> ProductBacklogService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return ProductBacklogService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+    )
+
+
+def _build_roadmap_service(settings: Settings) -> ProductRoadmapService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return ProductRoadmapService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+    )
+
+
+def _build_monitoring_service(settings: Settings) -> MonitoringService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return MonitoringService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+        settings=settings,
+    )
+
+
+def _build_learning_service(settings: Settings) -> LearningService:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return LearningService(
+        repository=SupabaseRepository(
+            supabase_url=settings.supabase_url,
+            supabase_key=settings.supabase_key,
+        ),
+    )
+
+
+def _idea_repository(settings: Settings) -> SupabaseRepository:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return SupabaseRepository(supabase_url=settings.supabase_url, supabase_key=settings.supabase_key)
+
+
+def _build_idea_session_service(settings: Settings) -> IdeaSessionService:
+    return IdeaSessionService(repository=_idea_repository(settings))
+
+
+def _build_idea_chat_service(settings: Settings) -> IdeaChatService:
+    return IdeaChatService(repository=_idea_repository(settings))
+
+
+def _build_idea_review_service(settings: Settings) -> IdeaReviewService:
+    return IdeaReviewService(repository=_idea_repository(settings))
+
+
+def _build_idea_discovery_service(settings: Settings) -> IdeaDiscoveryService:
+    return IdeaDiscoveryService(repository=_idea_repository(settings))
+
+
+def _build_idea_backlog_service(settings: Settings) -> IdeaBacklogService:
+    return IdeaBacklogService(repository=_idea_repository(settings))
+
+
+def _build_idea_roadmap_service(settings: Settings) -> IdeaRoadmapService:
+    return IdeaRoadmapService(repository=_idea_repository(settings))
+
+
+def _build_idea_monitoring_service(settings: Settings) -> IdeaMonitoringService:
+    return IdeaMonitoringService(repository=_idea_repository(settings))
+
+
+def _build_product_conversion_service(settings: Settings) -> ProductConversionService:
+    return ProductConversionService(repository=_idea_repository(settings))
+
+
 def _build_orchestrator(settings: Settings) -> AIOrchestrator:
     if settings.supabase_url is None or settings.supabase_key is None:
         raise ValueError("SUPABASE_URL and Supabase key are required.")
@@ -465,17 +1106,19 @@ def _build_orchestrator(settings: Settings) -> AIOrchestrator:
 
 def _build_llm_client(settings: Settings) -> DeterministicLLMClient | OpenAIJSONClient:
     if settings.ai_provider == "openai":
-        if settings.openai_model is None:
-            raise ValueError("OPENAI_MODEL is required.")
-        return OpenAIJSONClient(model=settings.openai_model)
+        model = settings.effective_openai_fast_model
+        if model is None:
+            raise ValueError("OPENAI_FAST_MODEL or OPENAI_MODEL is required.")
+        return OpenAIJSONClient(model=model)
 
     return DeterministicLLMClient()
 
 
 def _build_openai_llm_client(settings: Settings) -> OpenAIJSONClient | None:
-    if not settings.openai_model or not os.getenv("OPENAI_API_KEY"):
+    model = settings.effective_openai_deep_model
+    if not model or not os.getenv("OPENAI_API_KEY"):
         return None
-    return OpenAIJSONClient(model=settings.openai_model)
+    return OpenAIJSONClient(model=model)
 
 
 def _build_pr_client(settings: Settings) -> InMemoryPullRequestClient | GitHubPRClient:

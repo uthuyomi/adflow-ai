@@ -16,6 +16,10 @@ from backend.services.lp.lp_collector import LPCollection
 from backend.services.market.market_research_service import MarketResearchService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
+from backend.services.product_intelligence.learning_service import LearningService
+from backend.services.product_intelligence.monitoring_service import MonitoringService
+from backend.services.product_intelligence.roadmap_service import ProductRoadmapService
+from backend.services.product_review.product_review_service import ProductReviewService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 
@@ -84,6 +88,12 @@ class HistoryAwareRecommendation(BaseModel):
     failed_improvement_patterns: list[str] = Field(default_factory=list)
     outcome_based_warnings: list[str] = Field(default_factory=list)
     recommended_next_measurement: str = ""
+    product_review_run_id: str | None = None
+    product_opportunity_score: float | None = None
+    top_evidence_clusters: list[dict[str, Any]] = Field(default_factory=list)
+    product_risks: list[str] = Field(default_factory=list)
+    backlog_suggestions: list[str] = Field(default_factory=list)
+    product_context_summary: str = ""
 
 
 class LLMClient(Protocol):
@@ -108,6 +118,10 @@ class RegisteredPairAnalysisService:
         openai_llm_client: LLMClient | None = None,
         market_research_service: MarketResearchService | None = None,
         outcome_service: ImprovementOutcomeService | None = None,
+        product_review_service: ProductReviewService | None = None,
+        roadmap_service: ProductRoadmapService | None = None,
+        monitoring_service: MonitoringService | None = None,
+        learning_service: LearningService | None = None,
         orchestrator: AIOrchestrator | None = None,
     ) -> None:
         self.repository = repository
@@ -117,13 +131,17 @@ class RegisteredPairAnalysisService:
         self.openai_llm_client = openai_llm_client
         self.market_research_service = market_research_service
         self.outcome_service = outcome_service
+        self.product_review_service = product_review_service
+        self.roadmap_service = roadmap_service
+        self.monitoring_service = monitoring_service
+        self.learning_service = learning_service
         self.orchestrator = orchestrator or AIOrchestrator(repository=repository)
 
     def run(self, *, user_id: str, pair_id: str, ai_mode: str = "multi_provider") -> dict[str, Any]:
         if ai_mode not in {"multi_provider", "openai_only"}:
             raise ValueError("Invalid ai_mode.")
         if ai_mode == "openai_only" and self.openai_llm_client is None:
-            raise ValueError("OPENAI_API_KEY and OPENAI_MODEL are required for openai_only analysis.")
+            raise ValueError("OPENAI_API_KEY and OPENAI_DEEP_MODEL or OPENAI_MODEL are required for openai_only analysis.")
         pair = self.repository.get_one("ad_lp_pairs", user_id=user_id, filters={"id": pair_id})
         twitter_ad = self.repository.get_one(
             "twitter_ads",
@@ -158,6 +176,30 @@ class RegisteredPairAnalysisService:
                 "inconclusive_patterns": [],
             }
         )
+        product_context = (
+            self.product_review_service.latest_context_for_pair(
+                user_id=user_id,
+                project_id=pair.get("project_id"),
+                pair_id=pair_id,
+            )
+            if self.product_review_service
+            else None
+        )
+        roadmap_context = (
+            self.roadmap_service.latest_context_for_project(user_id=user_id, project_id=pair.get("project_id"))
+            if self.roadmap_service
+            else None
+        )
+        learning_patterns = (
+            self.learning_service.context_for_project(user_id=user_id, project_id=pair.get("project_id"))
+            if self.learning_service
+            else []
+        )
+        open_alerts = (
+            self.monitoring_service.open_alert_context(user_id=user_id, project_id=pair.get("project_id"))
+            if self.monitoring_service
+            else []
+        )
 
         ads_collection = self._to_ads_collection(twitter_ad)
         lp_collection = self._to_lp_collection(landing_page)
@@ -180,6 +222,10 @@ class RegisteredPairAnalysisService:
                 "previous_runs": previous_runs,
                 "market_research": market_research,
                 "improvement_outcomes": outcome_context,
+                "product_review_context": product_context,
+                "roadmap_context": roadmap_context,
+                "learning_patterns": learning_patterns,
+                "open_intelligence_alerts": open_alerts,
                 "features": features.model_dump(mode="json"),
                 "message_match_score": message_match_score,
                 "risk_level": risk_level,
@@ -196,6 +242,10 @@ class RegisteredPairAnalysisService:
             previous_runs=previous_runs,
             market_research=market_research,
             improvement_outcomes=outcome_context,
+            product_review_context=product_context,
+            roadmap_context=roadmap_context,
+            learning_patterns=learning_patterns,
+            open_intelligence_alerts=open_alerts,
             features=features.model_dump(),
             message_match_score=message_match_score,
             risk_level=risk_level,
@@ -226,6 +276,19 @@ class RegisteredPairAnalysisService:
                     **recommendation.model_dump(mode="json"),
                     "ai_mode": ai_mode,
                     "market_research_run_id": market_research.get("id") if market_research else None,
+                    "product_review_run_id": (
+                        product_context.get("latest_product_review", {}).get("id") if product_context else None
+                    ),
+                    "product_opportunity_score": (
+                        product_context.get("latest_product_review", {}).get("product_opportunity_score")
+                        if product_context
+                        else None
+                    ),
+                    "top_evidence_clusters": product_context.get("top_evidence_clusters", []) if product_context else [],
+                    "product_context_summary": self._product_context_summary(product_context),
+                    "roadmap_context": roadmap_context,
+                    "learning_patterns": learning_patterns,
+                    "open_intelligence_alerts": open_alerts,
                     "orchestration_run_id": orchestration.run["id"],
                     "route_plan": [step.model_dump(mode="json") for step in orchestration.route_plan],
                     "agent_results": [
@@ -269,6 +332,12 @@ class RegisteredPairAnalysisService:
                 "HistoryAwareRecommendation. Prioritize message mismatch between ad and LP. "
                 "Use market_research only as directional context for pains, competitors, search intent, "
                 "and positioning gaps. Do not make demand verdicts, success predictions, or revenue forecasts. "
+                "Product Review and Evidence Clusters are context only. Do not recommend product-level changes "
+                "unless the ad/LP promise is impossible to satisfy with the current product. Prioritize ad copy, "
+                "LP hero, CTA, positioning, and message match improvements. If a product-level issue is detected, "
+                "put it in product_risks or backlog_suggestions, not as a direct ad improvement. "
+                "Use roadmap_context, learning_patterns, and open_intelligence_alerts as prioritization context only. "
+                "Do not turn monitoring alerts into automatic product changes. "
                 "Use improvement_outcomes as measured history. Check successful, failed, and inconclusive patterns "
                 "before recommending a repeated change. Do not claim future success from past outcomes. "
                 "Use change history carefully: avoid confident claims when metrics are missing, "
@@ -437,4 +506,18 @@ class RegisteredPairAnalysisService:
             ui_risks=[],
             dangerous_changes=[],
             approved_for_pr=risk_level != "high" and not risky,
+        )
+
+    @staticmethod
+    def _product_context_summary(product_context: dict[str, Any] | None) -> str:
+        if not product_context:
+            return ""
+        latest = product_context.get("latest_product_review") or {}
+        score = latest.get("product_opportunity_score")
+        clusters = product_context.get("top_evidence_clusters") or []
+        backlog = product_context.get("high_priority_backlog_items") or []
+        return (
+            f"Latest product review score: {score if score is not None else 'unknown'}. "
+            f"Evidence clusters available: {len(clusters)}. High-priority backlog candidates: {len(backlog)}. "
+            "Use these as context, not as immediate implementation instructions."
         )

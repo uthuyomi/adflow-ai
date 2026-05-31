@@ -14,8 +14,14 @@ class AIProviderRegistry:
             "mock": MockProvider(),
             "grok": GrokProvider(api_key=settings.grok_api_key, model=settings.grok_model),
             "gemini": GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model),
-            "openai": OpenAIProvider(model=settings.openai_model),
-            "chatgpt": OpenAIProvider(model=settings.openai_model),
+            "openai": OpenAIProvider(
+                fast_model=settings.effective_openai_fast_model,
+                deep_model=settings.effective_openai_deep_model,
+            ),
+            "chatgpt": OpenAIProvider(
+                fast_model=settings.effective_openai_fast_model,
+                deep_model=settings.effective_openai_deep_model,
+            ),
             "codex": MockProvider(),
         }
 

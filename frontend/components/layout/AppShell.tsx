@@ -10,8 +10,9 @@ import { Sidebar } from "@/components/layout/Sidebar";
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isLogin = pathname.startsWith("/login");
+  const isPublic = pathname === "/" || isLogin;
 
-  if (isLogin) {
+  if (isPublic) {
     return (
       <div className="min-h-screen bg-background">
         <AuthGate>{children}</AuthGate>

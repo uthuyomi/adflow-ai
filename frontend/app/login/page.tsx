@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart3 } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,9 @@ export default function LoginPage() {
         </div>
         <Button className="mt-8 w-full" onClick={handleLogin}>
           Continue with Google
+        </Button>
+        <Button asChild className="mt-3 w-full" variant="ghost">
+          <Link href="/">Back to overview</Link>
         </Button>
       </div>
     </main>
