@@ -13,7 +13,7 @@ import type {
   LandingPageVersion,
   LandingPage,
   ImprovementOutcome,
-  MarketResearchRun,
+  DemandIntelligenceRun,
   TwitterAd,
 } from "@/lib/types/adflow";
 
@@ -235,15 +235,15 @@ export async function listLandingPageVersions(lpId: string): Promise<LandingPage
   return (data ?? []) as LandingPageVersion[];
 }
 
-export async function listRecentMarketResearchRuns(limit = 10): Promise<MarketResearchRun[]> {
+export async function listRecentDemandIntelligenceRuns(limit = 10): Promise<DemandIntelligenceRun[]> {
   const supabase = getSupabaseBrowserClient();
   const { data, error } = await supabase
-    .from("market_research_runs")
+    .from("demand_intelligence_runs")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []).map((run) => ({ ...run, sources: [], insights: [] })) as MarketResearchRun[];
+  return (data ?? []).map((run) => ({ ...run, signals: [], clusters: [] })) as DemandIntelligenceRun[];
 }
 
 export async function listRecentImprovementOutcomes(limit = 10): Promise<ImprovementOutcome[]> {

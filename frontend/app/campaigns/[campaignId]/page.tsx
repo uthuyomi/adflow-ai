@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { AdCreativePreview } from "@/components/campaigns/AdCreativePreview";
 import { CampaignMetricCards } from "@/components/campaigns/CampaignMetricCards";
 import { CampaignTrendChart } from "@/components/campaigns/CampaignTrendChart";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { SectionHeader } from "@/components/shared/SectionHeader";
@@ -18,7 +19,8 @@ export default function CampaignDetailPage() {
   const params = useParams<{ campaignId: string }>();
   const campaign = useCampaign(params.campaignId);
   if (campaign.isLoading) return <PageSkeleton />;
-  if (campaign.isError || !campaign.data) return <ErrorState />;
+  if (campaign.isError) return <ErrorState />;
+  if (!campaign.data) return <EmptyState title="No campaign" description="No registered ads matched this campaign." />;
 
   const data = campaign.data;
   return (
@@ -45,7 +47,7 @@ export default function CampaignDetailPage() {
         </TabsContent>
         <TabsContent value="metrics"><CampaignTrendChart data={data.metrics} /></TabsContent>
         <TabsContent value="suggestions">
-          <Card><CardHeader><CardTitle>AI detected problems</CardTitle></CardHeader><CardContent className="space-y-3">{data.problems.map((item) => <div className="rounded-md border border-border p-4 text-sm" key={item}>{item}</div>)}{data.suggestions.map((item) => <div className="rounded-md bg-accent p-4 text-sm" key={item}>{item}</div>)}</CardContent></Card>
+          <Card><CardHeader><CardTitle>AI detected problems</CardTitle></CardHeader><CardContent className="space-y-3">{data.problems.length || data.suggestions.length ? <>{data.problems.map((item) => <div className="rounded-md border border-border p-4 text-sm" key={item}>{item}</div>)}{data.suggestions.map((item) => <div className="rounded-md bg-accent p-4 text-sm" key={item}>{item}</div>)}</> : <div className="text-sm text-muted-foreground">No analysis suggestions yet.</div>}</CardContent></Card>
         </TabsContent>
         <TabsContent value="alignment">
           <Card><CardHeader><CardTitle>LP alignment</CardTitle></CardHeader><CardContent><div className="mb-2 flex justify-between text-sm"><span>Hero similarity</span><span className="font-semibold">{data.alignment}%</span></div><Progress value={data.alignment} /></CardContent></Card>

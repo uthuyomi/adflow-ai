@@ -102,7 +102,7 @@ export type ChangeHistory = {
 
 export type AIHistoryBasedRecommendation = {
   ai_mode?: "multi_provider" | "openai_only";
-  market_research_run_id?: UUID | null;
+  demand_intelligence_run_id?: UUID | null;
   overall_diagnosis: string;
   likely_problem: string;
   history_based_insights: Array<{
@@ -152,6 +152,31 @@ export type AIHistoryBasedRecommendation = {
   market_fit_analysis?: string;
   recommended_positioning?: string[];
   market_opportunities?: string[];
+  feature_suggestions?: JsonRecord[];
+  demand_signal_scores?: JsonRecord[];
+  trend_analysis?: JsonRecord[];
+  competitor_gaps?: JsonRecord[];
+  root_causes?: JsonRecord[];
+  evidence_summary?: JsonRecord[];
+  validation_summary?: JsonRecord;
+  solution_fit_summary?: JsonRecord;
+  monitoring_summary?: JsonRecord;
+  source_status_summary?: JsonRecord;
+  strong_validated_clusters?: JsonRecord[];
+  weak_or_noisy_clusters?: JsonRecord[];
+  matched_solution_pains?: string[];
+  unmatched_solution_pains?: string[];
+  emerging_demand_signals?: JsonRecord[];
+  growing_demand_signals?: JsonRecord[];
+  search_demand_summary?: JsonRecord;
+  market_size_summary?: JsonRecord;
+  outcome_learning_summary?: JsonRecord;
+  validated_demand_patterns?: string[];
+  failed_demand_patterns?: string[];
+  inconclusive_demand_patterns?: string[];
+  promising_segments?: JsonRecord[];
+  small_market_warnings?: string[];
+  recommended_next_tests?: string[];
   outcome_insights?: Array<{
     finding: string;
     evidence: string;
@@ -295,67 +320,363 @@ export type CodexTaskPrompt = {
   created_at: string;
 };
 
-export type MarketResearchSummary = {
-  market_overview: string;
-  main_pain_points: string[];
-  main_competitors: string[];
-  opportunities: string[];
-  warnings: string[];
-  positioning_gaps: string[];
-  social_research?: {
-    pain_points?: string[];
-    feature_requests?: string[];
-    positive_mentions?: string[];
-    negative_mentions?: string[];
-  };
-  search_research?: {
-    search_intents?: string[];
-    related_keywords?: string[];
-    competitor_keywords?: string[];
-  };
-  competitor_research?: Array<{
-    name?: string;
-    description?: string;
-    positioning?: string;
-    pricing?: string;
-    strengths?: string[];
-    weaknesses?: string[];
-  }>;
-};
-
-export type MarketResearchSource = {
-  id: UUID;
-  research_run_id: UUID;
-  source_type: "twitter" | "reddit" | "search" | "competitor" | "review" | "forum" | "youtube";
-  title: string;
-  url: string | null;
-  content: string;
-  sentiment: string | null;
-  relevance_score: number;
-  created_at: string;
-};
-
-export type MarketResearchInsight = {
-  id: UUID;
-  research_run_id: UUID;
+export type DemandCluster = {
+  id: string;
+  cluster_type: "pain" | "desire";
+  name: string;
   category: string;
-  title: string;
-  description: string;
+  count: number;
+  source_count: number;
+  representative_quotes: string[];
+  growth_rate: number;
   confidence: number;
+  persona_ratios: Record<string, number>;
+  root_causes: string[];
+  demand_signal_score: number;
+  trend: "increasing" | "decreasing" | "spiking" | "flat";
+  evidence_signal_indexes: number[];
+  validation_score: number;
+  fit_score: number | null;
+  trend_status: "unknown" | "emerging" | "growing" | "stable" | "declining" | "spike" | "noise";
+  source_diversity: number;
+  noise_ratio: number;
+  duplicate_ratio: number;
+  evidence_quality_score: number;
+};
+
+export type DemandOpportunity = {
+  name: string;
+  description: string;
+  evidence: string[];
+  related_clusters: string[];
+  related_competitors: string[];
+  expected_value: string;
+  risks: string[];
+};
+
+export type DemandFeatureSuggestion = {
+  feature_name: string;
+  solves: string[];
+  reason: string;
+  priority: "high" | "medium" | "low";
+  mvp: string;
+  expansion: string;
+};
+
+export type DemandPositioning = {
+  recommended_position: string;
+  differentiation_points: string[];
+  competitor_comparison: string[];
+  key_messages: string[];
+};
+
+export type DemandAdAppeal = {
+  appeal_axis: string;
+  hooks: string[];
+  headlines: string[];
+  bodies: string[];
+  ctas: string[];
+};
+
+export type DemandLPContext = {
+  hero_improvements: string[];
+  cta_improvements: string[];
+  faq_ideas: string[];
+  section_ideas: string[];
+  structure_improvements: string[];
+};
+
+export type DemandIntelligenceSummary = {
+  overview: string;
+  top_pain_clusters: DemandCluster[];
+  top_desire_clusters: DemandCluster[];
+  top_demand_signals: DemandCluster[];
+  emerging_trends: JsonRecord[];
+  competitor_gaps: JsonRecord[];
+  opportunities: DemandOpportunity[];
+  recommended_features: DemandFeatureSuggestion[];
+  recommended_positioning: DemandPositioning;
+  ad_appeals: DemandAdAppeal[];
+  lp_improvement_context: DemandLPContext;
+  evidence_summary: JsonRecord[];
+  guardrails: string[];
+  source_status_summary: DemandSourceStatusSummary | JsonRecord;
+  validation_summary: DemandValidationSummary | JsonRecord;
+  solution_fit_summary: DemandSolutionFitSummary | JsonRecord;
+  monitoring_summary: DemandMonitoringSummary | JsonRecord;
+  search_demand_summary: DemandSearchDemandSummary | JsonRecord;
+  market_size_summary: DemandMarketSizeSummary | JsonRecord;
+  outcome_learning_summary: DemandOutcomeLearningSummary | JsonRecord;
+  pair_analysis_context: JsonRecord;
+};
+
+export type DemandIntelligenceSignal = {
+  id: UUID;
+  run_id: UUID;
+  collected_at: string;
+  source_type: string;
+  source_name: string;
+  external_id: string | null;
+  connector_key: string | null;
+  url: string | null;
+  title: string;
+  body: string;
+  posted_at: string | null;
+  engagement: JsonRecord;
+  language: string;
+  quality_score: number;
+  noise_score: number;
+  spam_score: number;
+  duplicate_group_id: string | null;
+  validation_score: number;
+  metadata: JsonRecord;
   created_at: string;
 };
 
-export type MarketResearchRun = {
+export type DemandSignalValidation = {
+  id: UUID;
+  user_id: UUID;
+  run_id: UUID;
+  cluster_id: UUID | null;
+  signal_id: UUID | null;
+  validation_target: "signal" | "cluster" | "run_summary";
+  validation_score: number;
+  confidence: number;
+  cross_source_confirmed: boolean;
+  source_diversity: number;
+  duplicate_ratio: number;
+  noise_ratio: number;
+  spam_ratio: number;
+  recency_score: number;
+  continuity_score: number;
+  bias_warnings: string[];
+  validation_reasons: string[];
+  created_at: string;
+};
+
+export type DemandSolutionFit = {
+  id: UUID;
+  user_id: UUID;
+  run_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID | null;
+  cluster_id: UUID | null;
+  fit_target_type: "app_idea" | "ad_copy" | "lp_hero" | "lp_offer" | "feature" | "positioning" | "pair";
+  fit_target_id: string | null;
+  fit_target_text: string;
+  fit_score: number;
+  coverage_score: number;
+  gap_score: number;
+  confidence: number;
+  matched_pains: string[];
+  unmatched_pains: string[];
+  recommended_adjustments: string[];
+  evidence_signal_ids: string[];
+  created_at: string;
+};
+
+export type DemandSignalSnapshot = {
+  id: UUID;
+  user_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID | null;
+  run_id: UUID | null;
+  cluster_id: UUID | null;
+  cluster_name: string;
+  cluster_type: string;
+  category: string | null;
+  snapshot_date: string;
+  signal_count: number;
+  source_count: number;
+  demand_signal_score: number;
+  validation_score: number;
+  fit_score: number | null;
+  growth_7d: number | null;
+  growth_30d: number | null;
+  growth_90d: number | null;
+  trend_status: "unknown" | "emerging" | "growing" | "stable" | "declining" | "spike" | "noise";
+  metadata: JsonRecord;
+  created_at: string;
+};
+
+export type DemandSourceRun = {
+  id: UUID;
+  user_id: UUID;
+  run_id: UUID;
+  source_type: string;
+  connector_key: string;
+  query: string;
+  status: "pending" | "running" | "completed" | "partial" | "failed" | "skipped";
+  requested_count: number;
+  collected_count: number;
+  stored_count: number;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  metadata: JsonRecord;
+  created_at: string;
+};
+
+export type DemandConnectorLog = {
+  id: UUID;
+  user_id: UUID;
+  run_id: UUID | null;
+  source_run_id: UUID | null;
+  connector_key: string;
+  level: "debug" | "info" | "warning" | "error";
+  message: string;
+  metadata: JsonRecord;
+  created_at: string;
+};
+
+export type DemandValidationSummary = {
+  average_validation_score?: number;
+  strong_validated_clusters?: JsonRecord[];
+  weak_or_noisy_clusters?: JsonRecord[];
+  cross_source_confirmed_count?: number;
+};
+
+export type DemandSolutionFitSummary = {
+  average_fit_score?: number;
+  top_solution_fit_gaps?: JsonRecord[];
+  matched_solution_pains?: string[];
+  unmatched_solution_pains?: string[];
+  recommended_message_adjustments?: string[];
+  feature_fit_scores?: JsonRecord[];
+};
+
+export type DemandMonitoringSummary = {
+  emerging_clusters?: JsonRecord[];
+  growing_clusters?: JsonRecord[];
+  stable_clusters?: JsonRecord[];
+  declining_clusters?: JsonRecord[];
+  spike_warnings?: JsonRecord[];
+  noise_warnings?: JsonRecord[];
+  top_growth_signals?: JsonRecord[];
+};
+
+export type DemandSourceStatusSummary = {
+  real_sources_enabled?: boolean;
+  synthetic_fallback?: boolean;
+  sources?: DemandSourceRun[] | JsonRecord[];
+  completed_count?: number;
+  partial_count?: number;
+  failed_count?: number;
+  skipped_count?: number;
+  collected_count?: number;
+};
+
+export type DemandSearchSignal = {
+  id: UUID;
+  user_id: UUID;
+  run_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID | null;
+  query: string;
+  keyword: string;
+  source_type: string;
+  search_volume_estimate: number | null;
+  competition_level: string | null;
+  cpc_estimate: number | null;
+  related_keywords: string[];
+  suggest_queries: string[];
+  people_also_ask: string[];
+  trend_status: string;
+  confidence: number;
+  metadata: JsonRecord;
+  created_at: string;
+};
+
+export type DemandMarketSizeEstimate = {
+  id: UUID;
+  user_id: UUID;
+  run_id: UUID;
+  project_id: UUID | null;
+  ad_lp_pair_id: UUID | null;
+  cluster_id: UUID | null;
+  segment_name: string;
+  persona: string | null;
+  estimated_audience_size_min: number | null;
+  estimated_audience_size_max: number | null;
+  search_demand_score: number;
+  pain_signal_score: number;
+  competitor_gap_score: number;
+  market_size_score: number;
+  confidence: number;
+  assumptions: string[];
+  evidence: JsonRecord[];
+  created_at: string;
+};
+
+export type DemandOutcomeLearningLink = {
+  id: UUID;
+  user_id: UUID;
+  run_id: UUID | null;
+  cluster_id: UUID | null;
+  ad_lp_pair_id: UUID | null;
+  analysis_run_id: UUID | null;
+  outcome_id: UUID | null;
+  demand_signal_score: number | null;
+  validation_score: number | null;
+  fit_score: number | null;
+  search_demand_score: number | null;
+  market_size_score: number | null;
+  before_metrics: JsonRecord;
+  after_metrics: JsonRecord;
+  metric_delta: JsonRecord;
+  learning_status: "positive" | "neutral" | "negative" | "inconclusive" | "unknown";
+  learning_summary: string | null;
+  created_at: string;
+};
+
+export type DemandSearchDemandSummary = {
+  search_demand_score?: number;
+  top_search_keywords?: JsonRecord[];
+  low_search_warning?: string[];
+  high_search_opportunity?: string[];
+  guardrail?: string;
+  rows?: DemandSearchSignal[] | JsonRecord[];
+};
+
+export type DemandMarketSizeSummary = {
+  market_size_score?: number;
+  promising_segments?: JsonRecord[];
+  small_market_warnings?: string[];
+  persona_market_estimates?: JsonRecord[];
+  guardrail?: string;
+  rows?: DemandMarketSizeEstimate[] | JsonRecord[];
+};
+
+export type DemandOutcomeLearningSummary = {
+  outcome_learning_summary?: JsonRecord;
+  validated_demand_patterns?: string[];
+  failed_demand_patterns?: string[];
+  inconclusive_demand_patterns?: string[];
+  recommended_next_tests?: string[];
+  linked_outcome_count?: number;
+  guardrail?: string;
+  rows?: DemandOutcomeLearningLink[] | JsonRecord[];
+};
+
+export type DemandIntelligenceRun = {
   id: UUID;
   user_id: UUID;
   project_id: UUID | null;
   ad_lp_pair_id: UUID;
   query: string;
   status: string;
-  summary: MarketResearchSummary | JsonRecord;
+  summary: DemandIntelligenceSummary | JsonRecord;
+  real_sources_enabled: boolean;
+  source_status_summary: DemandSourceStatusSummary | JsonRecord;
+  validation_summary: DemandValidationSummary | JsonRecord;
+  solution_fit_summary: DemandSolutionFitSummary | JsonRecord;
+  monitoring_summary: DemandMonitoringSummary | JsonRecord;
+  search_demand_summary: DemandSearchDemandSummary | JsonRecord;
+  market_size_summary: DemandMarketSizeSummary | JsonRecord;
+  outcome_learning_summary: DemandOutcomeLearningSummary | JsonRecord;
   created_at: string;
-  sources: MarketResearchSource[];
-  insights: MarketResearchInsight[];
+  signals: DemandIntelligenceSignal[];
+  clusters: DemandCluster[];
 };
 
 export type ImprovementOutcomeStatus =

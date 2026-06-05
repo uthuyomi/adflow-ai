@@ -1,7 +1,5 @@
-import { buildPrs } from "@/lib/mock-data";
-import { runWorkflow } from "@/lib/api/client";
+import type { PullRequest } from "@/lib/schemas";
 
-export async function getPullRequests() {
-  const workflow = await runWorkflow();
-  return buildPrs(workflow);
+export async function getPullRequests(): Promise<PullRequest[]> {
+  return [];
 }

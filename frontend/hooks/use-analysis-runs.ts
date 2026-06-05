@@ -6,7 +6,7 @@ import { getApiBaseUrl } from "@/lib/api/client";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { listAnalysisRuns } from "@/lib/supabase/adflow-repository";
 import type { AnalysisRun } from "@/lib/types/adflow";
-import type { AnalysisAIMode } from "@/lib/store";
+import { useUiStore, type AnalysisAIMode } from "@/lib/store";
 
 export function useAnalysisRuns(pairId: string) {
   return useQuery({
@@ -18,6 +18,7 @@ export function useAnalysisRuns(pairId: string) {
 
 export function useRunPairAnalysis(pairId: string) {
   const queryClient = useQueryClient();
+  const locale = useUiStore((state) => state.locale);
   return useMutation({
     mutationFn: async (aiMode?: AnalysisAIMode): Promise<AnalysisRun> => {
       const selectedMode = aiMode ?? "openai_only";
@@ -31,7 +32,7 @@ export function useRunPairAnalysis(pairId: string) {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ ai_mode: selectedMode }),
+        body: JSON.stringify({ ai_mode: selectedMode, locale }),
       });
       if (!response.ok) throw new Error(await response.text());
       return response.json();

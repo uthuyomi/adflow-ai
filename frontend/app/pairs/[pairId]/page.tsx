@@ -20,12 +20,14 @@ import { useAnalysisRuns, useRunPairAnalysis } from "@/hooks/use-analysis-runs";
 import { usePairChangeHistory } from "@/hooks/use-change-history";
 import { useCreateImprovementOutcome, useCreateOutcomeFromAIResult, useImprovementOutcomes, useUpdateImprovementOutcome } from "@/hooks/use-improvement-outcomes";
 import { useLandingPageVersions } from "@/hooks/use-landing-pages";
-import { useLatestMarketResearch, useRunMarketResearch } from "@/hooks/use-market-research";
+import { useDemandEvidence, useDemandMarketSize, useDemandOutcomeLearning, useDemandSearchDemand, useDemandSnapshots, useDemandSolutionFits, useDemandSourceRuns, useDemandValidations, useLatestDemandIntelligence, useRebuildDemandOutcomeLearning, useRunDemandIntelligence, useRunSolutionFit } from "@/hooks/use-demand-intelligence";
 import { useAIAgentDecision, useAIAgentResults, useGenerateCodexTask } from "@/hooks/use-orchestration";
+import { useI18n } from "@/hooks/use-i18n";
 import { useUiStore } from "@/lib/store";
-import type { AIAgentResult, AIHistoryBasedRecommendation, ImprovementOutcome, ImprovementOutcomeStatus, JsonRecord, LandingPageVersion, MarketResearchRun, MarketResearchSummary } from "@/lib/types/adflow";
+import type { AIAgentResult, AIHistoryBasedRecommendation, DemandIntelligenceRun, DemandIntelligenceSignal, DemandIntelligenceSummary, DemandMarketSizeEstimate, DemandOutcomeLearningLink, DemandSearchSignal, DemandSignalSnapshot, DemandSignalValidation, DemandSolutionFit, DemandSourceRun, ImprovementOutcome, ImprovementOutcomeStatus, JsonRecord, LandingPageVersion } from "@/lib/types/adflow";
 
 export default function PairDetailPage() {
+  const { t } = useI18n();
   const params = useParams<{ pairId: string }>();
   const pair = useAdLpPair(params.pairId);
   const runs = useAnalysisRuns(params.pairId);
@@ -35,13 +37,25 @@ export default function PairDetailPage() {
   const decision = useAIAgentDecision();
   const codexTask = useGenerateCodexTask();
   const aiMode = useUiStore((state) => state.analysisAIMode);
-  const [researchQuery, setResearchQuery] = useState("");
-  const marketResearch = useLatestMarketResearch(params.pairId);
-  const runMarketResearch = useRunMarketResearch(params.pairId);
+  const [demandQuery, setDemandQuery] = useState("");
+  const demandIntelligence = useLatestDemandIntelligence(params.pairId);
+  const runDemandIntelligence = useRunDemandIntelligence(params.pairId);
+  const demandRunId = demandIntelligence.data?.id;
+  const demandSourceRuns = useDemandSourceRuns(demandRunId);
+  const demandValidations = useDemandValidations(demandRunId);
+  const demandSolutionFits = useDemandSolutionFits(demandRunId);
+  const demandSnapshots = useDemandSnapshots(demandRunId);
+  const demandEvidence = useDemandEvidence(demandRunId);
+  const demandSearchDemand = useDemandSearchDemand(demandRunId);
+  const demandMarketSize = useDemandMarketSize(demandRunId);
+  const demandOutcomeLearning = useDemandOutcomeLearning(demandRunId);
+  const runSolutionFit = useRunSolutionFit(demandRunId);
+  const rebuildOutcomeLearning = useRebuildDemandOutcomeLearning(demandRunId);
   const outcomes = useImprovementOutcomes(params.pairId);
   const createOutcome = useCreateImprovementOutcome(params.pairId);
   const updateOutcome = useUpdateImprovementOutcome(params.pairId);
   const createOutcomeFromResult = useCreateOutcomeFromAIResult(params.pairId);
+  const [detailMode, setDetailMode] = useState<"beginner" | "advanced">("beginner");
 
   const analyze = async () => {
     try {
@@ -55,20 +69,20 @@ export default function PairDetailPage() {
   const latest = runs.data?.[0];
   const insights = latest?.history_insights as AIHistoryBasedRecommendation | undefined;
   const agentResults = useAIAgentResults(insights?.orchestration_run_id);
-  const defaultResearchQuery = [
+  const defaultDemandQuery = [
     pair.data?.twitter_ads?.headline,
     pair.data?.landing_pages?.hero_title,
     pair.data?.landing_pages?.target_audience,
   ].filter(Boolean).join(" ");
-  const runResearch = async () => {
+  const runDemand = async () => {
     try {
-      await runMarketResearch.mutateAsync({
+      await runDemandIntelligence.mutateAsync({
         projectId: pair.data?.project_id,
-        query: researchQuery.trim() || defaultResearchQuery || pair.data?.name || "market research",
+        query: demandQuery.trim() || defaultDemandQuery || pair.data?.name || "demand intelligence",
       });
-      toast.success("Market research completed.");
+      toast.success("Demand intelligence completed.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Market research failed.");
+      toast.error(error instanceof Error ? error.message : "Demand intelligence failed.");
     }
   };
 
@@ -108,21 +122,41 @@ export default function PairDetailPage() {
         <Card className="p-4">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <div className="font-medium">Active analysis route</div>
-            <Badge variant="outline">{insights.ai_mode === "openai_only" ? "OpenAI API only" : "AI OS router"}</Badge>
+            <Badge variant="outline">{insights.ai_mode === "openai_only" ? "OpenAI API only" : "AI Review Center router"}</Badge>
           </div>
         </Card>
       ) : null}
 
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold">{t("pair.beginner.title")}</div>
+            <p className="mt-1 text-sm text-muted-foreground">{t("pair.beginner.copy")}</p>
+          </div>
+          <div className="inline-flex rounded-md border border-border p-1">
+            <Button size="sm" variant={detailMode === "beginner" ? "default" : "ghost"} onClick={() => setDetailMode("beginner")}>
+              {t("pair.mode.beginner")}
+            </Button>
+            <Button size="sm" variant={detailMode === "advanced" ? "default" : "ghost"} onClick={() => setDetailMode("advanced")}>
+              {t("pair.mode.advanced")}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {detailMode === "beginner" ? (
+        <BeginnerPairView latest={latest} insights={insights} outcomes={outcomes.data ?? []} onAnalyze={analyze} isAnalyzing={run.isPending} />
+      ) : (
       <Tabs defaultValue="overview">
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="runs">Analysis</TabsTrigger>
           <TabsTrigger value="comparison">AI Comparison</TabsTrigger>
-          <TabsTrigger value="market">Market Research</TabsTrigger>
+          <TabsTrigger value="demand">Demand Intelligence</TabsTrigger>
           <TabsTrigger value="outcomes">Outcomes</TabsTrigger>
           <TabsTrigger value="versions">Versions</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
-          <TabsTrigger value="orchestration">AI OS</TabsTrigger>
+          <TabsTrigger value="orchestration">AI Review Center</TabsTrigger>
           <TabsTrigger value="ai">AI Recommendations</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
@@ -206,15 +240,41 @@ export default function PairDetailPage() {
             }}
           />
         </TabsContent>
-        <TabsContent value="market">
-          <MarketResearchPanel
-            isLoading={marketResearch.isLoading}
-            isRunning={runMarketResearch.isPending}
-            query={researchQuery}
-            run={marketResearch.data}
-            onQueryChange={setResearchQuery}
-            onRun={runResearch}
-            placeholder={defaultResearchQuery || pair.data.name}
+        <TabsContent value="demand">
+          <DemandIntelligencePanel
+            isLoading={demandIntelligence.isLoading}
+            isRunning={runDemandIntelligence.isPending}
+            query={demandQuery}
+            run={demandIntelligence.data}
+            sourceRuns={demandSourceRuns.data ?? []}
+            validations={demandValidations.data ?? []}
+            solutionFits={demandSolutionFits.data ?? []}
+            snapshots={demandSnapshots.data ?? []}
+            evidenceSignals={demandEvidence.data ?? []}
+            searchSignals={demandSearchDemand.data ?? []}
+            marketEstimates={demandMarketSize.data ?? []}
+            outcomeLearningLinks={demandOutcomeLearning.data ?? []}
+            isRunningSolutionFit={runSolutionFit.isPending}
+            isRebuildingOutcomeLearning={rebuildOutcomeLearning.isPending}
+            onQueryChange={setDemandQuery}
+            onRun={runDemand}
+            onRunSolutionFit={async (fitTargetText) => {
+              try {
+                await runSolutionFit.mutateAsync({ fitTargetType: "app_idea", fitTargetText });
+                toast.success("Solution fit completed.");
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Solution fit failed.");
+              }
+            }}
+            onRebuildOutcomeLearning={async () => {
+              try {
+                await rebuildOutcomeLearning.mutateAsync();
+                toast.success("Outcome learning rebuilt.");
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Outcome learning rebuild failed.");
+              }
+            }}
+            placeholder={defaultDemandQuery || pair.data.name}
           />
         </TabsContent>
         <TabsContent value="outcomes">
@@ -291,7 +351,7 @@ export default function PairDetailPage() {
               ))}
             </div>
           ) : (
-            <EmptyState title="No orchestration log" description="Run analysis to route this pair through specialized AI desks." />
+            <EmptyState title="No orchestration log" description="Run analysis to route this pair through specialized AI review desks." />
           )}
         </TabsContent>
         <TabsContent value="ai">
@@ -359,8 +419,123 @@ export default function PairDetailPage() {
           )}
         </TabsContent>
       </Tabs>
+      )}
     </div>
   );
+}
+
+function BeginnerPairView({
+  latest,
+  insights,
+  outcomes,
+  onAnalyze,
+  isAnalyzing,
+}: {
+  latest: {
+    score?: number | null;
+    risk_level?: string | null;
+    ad_improvements?: unknown;
+    lp_improvements?: unknown;
+    review_result?: unknown;
+  } | undefined;
+  insights: AIHistoryBasedRecommendation | undefined;
+  outcomes: ImprovementOutcome[];
+  onAnalyze: () => Promise<void>;
+  isAnalyzing: boolean;
+}) {
+  const { t } = useI18n();
+  const recommendations = [
+    ...extractRecommendationText(latest?.ad_improvements),
+    ...extractRecommendationText(latest?.lp_improvements),
+    ...(insights?.ad_recommendations ?? []).map((item) => item.suggested_value),
+    ...(insights?.lp_recommendations ?? []).map((item) => item.suggested_value),
+  ].filter(Boolean).slice(0, 6);
+  const risks = [
+    latest?.risk_level ? `Risk level: ${latest.risk_level}` : "",
+    ...extractRecommendationText(latest?.review_result),
+  ].filter((item): item is string => Boolean(item)).slice(0, 4);
+  const strengths = [
+    typeof latest?.score === "number" && latest.score >= 70 ? "Current pair has a strong overall analysis score." : "",
+    insights?.overall_diagnosis,
+    insights?.market_fit_analysis,
+  ].filter((item): item is string => Boolean(item)).slice(0, 4);
+  const priority = recommendations.length ? recommendations.slice(0, 3) : [t("pair.noRecommendations")];
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="p-4">
+          <div className="text-sm text-muted-foreground">{t("pair.latestResult")}</div>
+          <div className="mt-2 text-3xl font-semibold">{typeof latest?.score === "number" ? latest.score : "-"}</div>
+          <p className="mt-2 text-sm text-muted-foreground">{latest ? `Risk: ${latest.risk_level ?? "unknown"}` : t("pair.noLatest")}</p>
+        </Card>
+        <Card className="p-4 md:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="font-semibold">{t("pair.topRecommendations")}</div>
+              <p className="mt-1 text-sm text-muted-foreground">{recommendations.length ? recommendations[0] : t("pair.noRecommendations")}</p>
+            </div>
+            <Button onClick={onAnalyze} disabled={isAnalyzing}>
+              <Play className="mr-2 h-4 w-4" />
+              {isAnalyzing ? "Running..." : "Run analysis"}
+            </Button>
+          </div>
+        </Card>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryList title={t("pair.visual.strengths")} items={strengths.length ? strengths : [t("pair.noLatest")]} />
+        <SummaryList title={t("pair.visual.risks")} items={risks.length ? risks : ["No major review risks surfaced yet."]} />
+        <SummaryList title={t("pair.visual.recommendations")} items={recommendations.length ? recommendations : [t("pair.noRecommendations")]} />
+        <SummaryList title={t("pair.visual.priority")} items={priority} />
+      </div>
+      <Card className="p-4">
+        <div className="font-semibold">{t("pair.recentOutcomes")}</div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {outcomes.slice(0, 3).map((outcome) => (
+            <div className="rounded-md border border-border p-3 text-sm" key={outcome.id}>
+              <div className="font-medium">{outcome.title}</div>
+              <p className="mt-1 text-muted-foreground">{outcome.outcome_summary ?? outcome.outcome_status}</p>
+            </div>
+          ))}
+          {!outcomes.length ? <div className="text-sm text-muted-foreground">{t("pair.noOutcomes")}</div> : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function SummaryList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <Card className="p-4">
+      <div className="font-semibold">{title}</div>
+      <div className="mt-3 grid gap-2">
+        {items.map((item) => (
+          <div className="rounded-md border border-border p-3 text-sm" key={item}>
+            {item}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function extractRecommendationText(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => {
+      if (typeof item === "string") return [item];
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        return [record.suggested_value, record.reason, record.summary].filter((text): text is string => typeof text === "string");
+      }
+      return [];
+    });
+  }
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.values(record).filter((text): text is string => typeof text === "string").slice(0, 4);
+  }
+  return typeof value === "string" ? [value] : [];
 }
 
 function AIProposalComparison({
@@ -450,28 +625,58 @@ function AIProposalComparison({
   );
 }
 
-function MarketResearchPanel({
+function DemandIntelligencePanel({
   run,
+  sourceRuns,
+  validations,
+  solutionFits,
+  snapshots,
+  evidenceSignals,
+  searchSignals,
+  marketEstimates,
+  outcomeLearningLinks,
   query,
   placeholder,
   isLoading,
   isRunning,
+  isRunningSolutionFit,
+  isRebuildingOutcomeLearning,
   onQueryChange,
   onRun,
+  onRunSolutionFit,
+  onRebuildOutcomeLearning,
 }: {
-  run?: MarketResearchRun;
+  run?: DemandIntelligenceRun;
+  sourceRuns: DemandSourceRun[];
+  validations: DemandSignalValidation[];
+  solutionFits: DemandSolutionFit[];
+  snapshots: DemandSignalSnapshot[];
+  evidenceSignals: DemandIntelligenceSignal[];
+  searchSignals: DemandSearchSignal[];
+  marketEstimates: DemandMarketSizeEstimate[];
+  outcomeLearningLinks: DemandOutcomeLearningLink[];
   query: string;
   placeholder: string;
   isLoading: boolean;
   isRunning: boolean;
+  isRunningSolutionFit: boolean;
+  isRebuildingOutcomeLearning: boolean;
   onQueryChange: (value: string) => void;
   onRun: () => Promise<void>;
+  onRunSolutionFit: (fitTargetText: string) => Promise<void>;
+  onRebuildOutcomeLearning: () => Promise<void>;
 }) {
+  const [fitText, setFitText] = useState("");
   if (isLoading) return <PageSkeleton />;
-  const summary = (run?.summary ?? {}) as MarketResearchSummary;
-  const competitors = summary.competitor_research ?? [];
-  const painPoints = summary.social_research?.pain_points ?? summary.main_pain_points ?? [];
+  const summary = (run?.summary ?? {}) as DemandIntelligenceSummary;
+  const painClusters = summary.top_pain_clusters ?? [];
+  const desireClusters = summary.top_desire_clusters ?? [];
+  const demandSignals = summary.top_demand_signals ?? [];
   const opportunities = summary.opportunities ?? [];
+  const features = summary.recommended_features ?? [];
+  const positioning = summary.recommended_positioning;
+  const lpContext = summary.lp_improvement_context;
+  const summaryEvidence = summary.evidence_summary ?? [];
 
   return (
     <div className="space-y-4">
@@ -479,7 +684,7 @@ function MarketResearchPanel({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="flex-1">
             <Input
-              aria-label="Market research query"
+              aria-label="Demand intelligence query"
               onChange={(event) => onQueryChange(event.target.value)}
               placeholder={placeholder}
               value={query}
@@ -487,7 +692,7 @@ function MarketResearchPanel({
           </div>
           <Button onClick={onRun} disabled={isRunning}>
             <Search className="mr-2 h-4 w-4" />
-            {isRunning ? "Researching..." : "Run research"}
+            {isRunning ? "Scanning..." : "Run demand scan"}
           </Button>
         </div>
       </Card>
@@ -497,57 +702,77 @@ function MarketResearchPanel({
           <div className="grid gap-4 xl:grid-cols-3">
             <Card className="p-4 xl:col-span-2">
               <div className="flex items-center justify-between gap-3">
-                <div className="font-semibold">Overview</div>
+                <div className="font-semibold">Demand Intelligence Overview</div>
                 <Badge variant="outline">{run.status}</Badge>
               </div>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                {summary.market_overview ?? "No overview was generated."}
+                {summary.overview ?? "No overview was generated."}
               </p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {(summary.main_pain_points ?? []).slice(0, 4).map((item) => (
-                  <div className="rounded-md border border-border p-3 text-sm" key={item}>{item}</div>
+                {demandSignals.slice(0, 4).map((item) => (
+                  <div className="rounded-md border border-border p-3 text-sm" key={item.id}>
+                    <div className="font-medium">{item.name}</div>
+                    <div className="mt-1 text-muted-foreground">Score {item.demand_signal_score} / {item.trend}</div>
+                  </div>
                 ))}
               </div>
             </Card>
             <Card className="p-4">
-              <div className="font-semibold">Research run</div>
+              <div className="font-semibold">Run metadata</div>
               <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                 <div>Query: {run.query}</div>
-                <div>Sources: {run.sources.length}</div>
-                <div>Insights: {run.insights.length}</div>
+                <div>Signals: {run.signals.length}</div>
+                <div>Clusters: {run.clusters.length}</div>
                 <div>Created: {new Date(run.created_at).toLocaleString()}</div>
               </div>
             </Card>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
-            <ResearchSection title="Pain Points" items={painPoints} badge="Directional" />
-            <ResearchSection title="Opportunities" items={opportunities} badge="Hypothesis" />
-            <ResearchSection title="Warnings" items={summary.warnings ?? []} badge="Guardrails" />
+            <ClusterSection title="Top Pain Clusters" clusters={painClusters} />
+            <ClusterSection title="Top Desire Clusters" clusters={desireClusters} />
+            <ResearchSection title="Guardrails" items={summary.guardrails ?? []} badge="Required" />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SourceStatusPanel sourceRuns={sourceRuns} />
+            <SignalValidationPanel validations={validations} />
+            <SolutionFitPanel
+              fitText={fitText}
+              isRunning={isRunningSolutionFit}
+              onFitTextChange={setFitText}
+              onRunSolutionFit={() => onRunSolutionFit(fitText)}
+              solutionFits={solutionFits}
+            />
+            <DemandMonitoringPanel snapshots={snapshots} />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            <SearchDemandPanel searchSignals={searchSignals} summary={summary.search_demand_summary as JsonRecord | undefined} />
+            <MarketSizePanel estimates={marketEstimates} summary={summary.market_size_summary as JsonRecord | undefined} />
+            <OutcomeLearningPanel
+              isRebuilding={isRebuildingOutcomeLearning}
+              links={outcomeLearningLinks}
+              onRebuild={onRebuildOutcomeLearning}
+              summary={summary.outcome_learning_summary as JsonRecord | undefined}
+            />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Competitors</CardTitle>
+                <CardTitle className="text-base">Competitor Gaps</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-3">
-                {competitors.length ? competitors.map((item) => (
-                  <div className="rounded-md border border-border p-4 text-sm" key={item.name ?? item.description}>
-                    <div className="font-medium">{item.name ?? "Competitor"}</div>
-                    <div className="mt-2 text-muted-foreground">{item.positioning ?? item.description ?? "-"}</div>
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      <div>
-                        <div className="text-xs text-muted-foreground">Strengths</div>
-                        <div>{(item.strengths ?? []).join(", ") || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-muted-foreground">Weaknesses</div>
-                        <div>{(item.weaknesses ?? []).join(", ") || "-"}</div>
-                      </div>
+                {(summary.competitor_gaps ?? []).length ? summary.competitor_gaps.map((item) => (
+                  <div className="rounded-md border border-border p-4 text-sm" key={String(item.name)}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium">{String(item.name ?? "Gap")}</div>
+                      <Badge variant="outline">{String(item.gap_score ?? "-")}</Badge>
                     </div>
+                    <div className="mt-2 text-muted-foreground">{(item.competitor_weaknesses as string[] | undefined)?.join(", ") || "-"}</div>
                   </div>
-                )) : <EmptyState title="No competitors" description="Run research to collect competitor materials." />}
+                )) : <EmptyState title="No competitor gaps" description="Run demand intelligence to collect unresolved competitor gaps." />}
               </CardContent>
             </Card>
 
@@ -555,30 +780,317 @@ function MarketResearchPanel({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TrendingUp className="h-4 w-4" />
-                  Source Signals
+                  Opportunity Discovery
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid gap-3">
-                {run.sources.slice(0, 8).map((source) => (
-                  <div className="rounded-md border border-border p-3 text-sm" key={source.id}>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-medium">{source.title}</div>
-                      <Badge variant="outline">{source.source_type}</Badge>
-                    </div>
-                    <p className="mt-2 text-muted-foreground">{source.content}</p>
-                    <div className="mt-2 text-xs text-muted-foreground">
-                      Relevance: {Math.round(source.relevance_score)} / Sentiment: {source.sentiment ?? "unknown"}
-                    </div>
+                {opportunities.slice(0, 5).map((item) => (
+                  <div className="rounded-md border border-border p-3 text-sm" key={item.name}>
+                    <div className="font-medium">{item.name}</div>
+                    <p className="mt-2 text-muted-foreground">{item.description}</p>
+                    <div className="mt-2 text-xs text-muted-foreground">{item.expected_value}</div>
                   </div>
                 ))}
               </CardContent>
             </Card>
           </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <ResearchSection title="Recommended Features" items={features.map((item) => `${item.feature_name}: ${item.mvp}`)} badge="Feature" />
+            <ResearchSection title="Recommended Positioning" items={[positioning?.recommended_position, ...(positioning?.key_messages ?? [])].filter(Boolean) as string[]} badge="Positioning" />
+            <ResearchSection title="Ad Appeal Hooks" items={(summary.ad_appeals ?? []).flatMap((item) => item.hooks)} badge="Ad" />
+            <ResearchSection title="LP Improvement Context" items={[...(lpContext?.hero_improvements ?? []), ...(lpContext?.cta_improvements ?? []), ...(lpContext?.section_ideas ?? [])]} badge="LP" />
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Evidence Explorer</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {summaryEvidence.length ? summaryEvidence.slice(0, 12).map((item) => (
+                <div className="rounded-md border border-border p-3 text-sm" key={String(item.label)}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium">{String(item.label)}</div>
+                    <Badge variant="outline">{String(item.count ?? 0)} signals</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {((item.signal_indexes as number[] | undefined) ?? []).slice(0, 4).map((index) => {
+                      const signal = evidenceSignals[index] ?? run.signals[index];
+                      return signal ? (
+                        <div className="rounded-md bg-muted p-3" key={`${item.label}-${signal.id}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span>{signal.title}</span>
+                            <Badge variant="outline">{signal.source_type}</Badge>
+                          </div>
+                          <p className="mt-2 text-muted-foreground">{String(signal.metadata?.normalized_text ?? signal.body)}</p>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              )) : <EmptyState title="No evidence" description="Run demand intelligence to inspect original signals behind each conclusion." />}
+            </CardContent>
+          </Card>
         </>
       ) : (
-        <EmptyState title="No market research" description="Run research to collect pains, competitors, search intent, and positioning gaps before analysis." />
+        <EmptyState title="No demand intelligence" description="Run demand intelligence to collect pains, desires, competitor gaps, demand signals, and evidence before analysis." />
       )}
     </div>
+  );
+}
+
+function SourceStatusPanel({ sourceRuns }: { sourceRuns: DemandSourceRun[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Source Collection Status</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {sourceRuns.length ? sourceRuns.slice(0, 8).map((sourceRun) => (
+          <div className="rounded-md border border-border p-3 text-sm" key={sourceRun.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-medium">{sourceRun.connector_key}</div>
+              <Badge variant={sourceRun.status === "failed" ? "warning" : "outline"}>{sourceRun.status}</Badge>
+            </div>
+            <div className="mt-2 text-muted-foreground">
+              {sourceRun.source_type} / collected {sourceRun.collected_count} / stored {sourceRun.stored_count}
+            </div>
+            {sourceRun.error_message ? <p className="mt-2 text-xs text-muted-foreground">{sourceRun.error_message}</p> : null}
+          </div>
+        )) : <EmptyState title="No source runs" description="Run demand intelligence to inspect connector status." />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SignalValidationPanel({ validations }: { validations: DemandSignalValidation[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Signal Validation</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {validations.length ? validations.slice(0, 8).map((validation) => (
+          <div className="rounded-md border border-border p-3 text-sm" key={validation.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-medium">{validation.cluster_id ? `Cluster ${validation.cluster_id.slice(0, 8)}` : "Run validation"}</div>
+              <Badge variant={validation.validation_score >= 70 ? "secondary" : "outline"}>{validation.validation_score}</Badge>
+            </div>
+            <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+              <div>Sources: {validation.source_diversity} / Confidence: {validation.confidence}</div>
+              <div>Noise: {validation.noise_ratio} / Duplicate: {validation.duplicate_ratio}</div>
+            </div>
+            {validation.bias_warnings.length ? (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {validation.bias_warnings.slice(0, 3).map((warning) => <Badge key={warning} variant="outline">{warning}</Badge>)}
+              </div>
+            ) : null}
+          </div>
+        )) : <EmptyState title="No validation data" description="Run demand intelligence to score signal quality and evidence strength." />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SolutionFitPanel({
+  solutionFits,
+  fitText,
+  isRunning,
+  onFitTextChange,
+  onRunSolutionFit,
+}: {
+  solutionFits: DemandSolutionFit[];
+  fitText: string;
+  isRunning: boolean;
+  onFitTextChange: (value: string) => void;
+  onRunSolutionFit: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Solution Fit</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            aria-label="Solution fit target"
+            onChange={(event) => onFitTextChange(event.target.value)}
+            placeholder="Describe an app idea, offer, or positioning to test"
+            value={fitText}
+          />
+          <Button disabled={isRunning || !fitText.trim()} onClick={onRunSolutionFit}>
+            {isRunning ? "Checking..." : "Run fit"}
+          </Button>
+        </div>
+        {solutionFits.length ? solutionFits.slice(0, 6).map((fit) => (
+          <div className="rounded-md border border-border p-3 text-sm" key={fit.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-medium">{fit.fit_target_type}</div>
+              <Badge variant={fit.fit_score >= 70 ? "secondary" : "outline"}>{fit.fit_score}</Badge>
+            </div>
+            {fit.matched_pains.length ? <p className="mt-2 text-muted-foreground">Matched: {fit.matched_pains.slice(0, 3).join(", ")}</p> : null}
+            {fit.unmatched_pains.length ? <p className="mt-1 text-muted-foreground">Unmatched: {fit.unmatched_pains.slice(0, 3).join(", ")}</p> : null}
+          </div>
+        )) : <div className="text-sm text-muted-foreground">No solution fit results yet.</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DemandMonitoringPanel({ snapshots }: { snapshots: DemandSignalSnapshot[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Demand Monitoring</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {snapshots.length ? snapshots.slice(0, 8).map((snapshot) => (
+          <div className="rounded-md border border-border p-3 text-sm" key={snapshot.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-medium">{snapshot.trend_status}</div>
+              <Badge variant="outline">{snapshot.demand_signal_score}</Badge>
+            </div>
+            <div className="mt-2 text-muted-foreground">
+              Signals {snapshot.signal_count} / 30d growth {snapshot.growth_30d ?? "-"} / Validation {snapshot.validation_score}
+            </div>
+          </div>
+        )) : <EmptyState title="No monitoring snapshots" description="Run demand intelligence to store trend snapshots." />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SearchDemandPanel({ searchSignals, summary }: { searchSignals: DemandSearchSignal[]; summary?: JsonRecord }) {
+  const topKeywords = (summary?.top_search_keywords as JsonRecord[] | undefined) ?? [];
+  const warnings = (summary?.low_search_warning as string[] | undefined) ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Search Demand</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">Indicative score</span>
+          <Badge variant="outline">{String(summary?.search_demand_score ?? "-")}</Badge>
+        </div>
+        {(topKeywords.length ? topKeywords : searchSignals).slice(0, 5).map((rawItem) => {
+          const item = rawItem as Record<string, unknown>;
+          const metadata = (item.metadata as Record<string, unknown> | undefined) ?? {};
+          return (
+          <div className="rounded-md border border-border p-3 text-sm" key={String(item.keyword)}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-medium">{String(item.keyword)}</div>
+              <Badge variant="outline">{String(item.confidence ?? "-")}</Badge>
+            </div>
+            <div className="mt-2 text-muted-foreground">
+              Volume estimate {String(item.volume_estimate ?? item.search_volume_estimate ?? "-")} / score {String(item.score ?? metadata.search_demand_score ?? "-")}
+            </div>
+          </div>
+        );})}
+        {warnings.slice(0, 3).map((warning) => <div className="text-xs text-muted-foreground" key={warning}>{warning}</div>)}
+        {!topKeywords.length && !searchSignals.length ? <EmptyState title="No search demand" description="Run demand intelligence to create search demand signals." /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MarketSizePanel({ estimates, summary }: { estimates: DemandMarketSizeEstimate[]; summary?: JsonRecord }) {
+  const segments = (summary?.promising_segments as JsonRecord[] | undefined) ?? [];
+  const warnings = (summary?.small_market_warnings as string[] | undefined) ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Market Size</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">Estimate score</span>
+          <Badge variant="outline">{String(summary?.market_size_score ?? "-")}</Badge>
+        </div>
+        {(segments.length ? segments : estimates).slice(0, 5).map((rawItem) => {
+          const item = rawItem as Record<string, unknown>;
+          const range = (item.estimated_audience_range as number[] | undefined) ?? [item.estimated_audience_size_min, item.estimated_audience_size_max];
+          return (
+            <div className="rounded-md border border-border p-3 text-sm" key={String(item.segment_name)}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-medium">{String(item.segment_name)}</div>
+                <Badge variant="outline">{String(item.market_size_score ?? "-")}</Badge>
+              </div>
+              <div className="mt-2 text-muted-foreground">
+                Range {String(range?.[0] ?? "-")} - {String(range?.[1] ?? "-")} / confidence {String(item.confidence ?? "-")}
+              </div>
+            </div>
+          );
+        })}
+        {warnings.slice(0, 3).map((warning) => <div className="text-xs text-muted-foreground" key={warning}>{warning}</div>)}
+        {!segments.length && !estimates.length ? <EmptyState title="No market size estimates" description="Run demand intelligence to create cautious segment estimates." /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OutcomeLearningPanel({
+  links,
+  summary,
+  isRebuilding,
+  onRebuild,
+}: {
+  links: DemandOutcomeLearningLink[];
+  summary?: JsonRecord;
+  isRebuilding: boolean;
+  onRebuild: () => Promise<void>;
+}) {
+  const positives = (summary?.validated_demand_patterns as string[] | undefined) ?? [];
+  const negatives = (summary?.failed_demand_patterns as string[] | undefined) ?? [];
+  const nextTests = (summary?.recommended_next_tests as string[] | undefined) ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <span>Outcome Learning</span>
+          <Button size="sm" variant="outline" disabled={isRebuilding} onClick={onRebuild}>
+            {isRebuilding ? "Rebuilding..." : "Rebuild"}
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="text-sm text-muted-foreground">Linked outcomes: {String(summary?.linked_outcome_count ?? links.length)}</div>
+        {[...positives, ...negatives, ...nextTests].slice(0, 6).map((item) => (
+          <div className="rounded-md border border-border p-3 text-sm" key={item}>{item}</div>
+        ))}
+        {links.slice(0, 4).map((link) => (
+          <div className="rounded-md bg-muted p-3 text-sm" key={link.id}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>{link.learning_summary ?? "Outcome learning link"}</span>
+              <Badge variant={link.learning_status === "negative" ? "warning" : "outline"}>{link.learning_status}</Badge>
+            </div>
+          </div>
+        ))}
+        {!links.length && !positives.length && !negatives.length && !nextTests.length ? <EmptyState title="No outcome learning" description="Measured outcomes will be linked back to demand signals here." /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClusterSection({ title, clusters }: { title: string; clusters: DemandIntelligenceSummary["top_pain_clusters"] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {clusters.length ? clusters.slice(0, 5).map((cluster) => (
+          <div className="rounded-md border border-border p-3 text-sm" key={cluster.id}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-medium">{cluster.name}</div>
+              <Badge variant="outline">{cluster.demand_signal_score}</Badge>
+            </div>
+            <div className="mt-2 text-muted-foreground">{cluster.category} / {cluster.trend} / {cluster.count} signals</div>
+            <div className="mt-2 text-xs text-muted-foreground">{cluster.root_causes.slice(0, 3).join(", ")}</div>
+          </div>
+        )) : <EmptyState title="No clusters" description="Run demand intelligence to create clusters." />}
+      </CardContent>
+    </Card>
   );
 }
 

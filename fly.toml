@@ -1,0 +1,33 @@
+app = "adflow-ai-api"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "backend/Dockerfile"
+
+[env]
+  PORT = "8080"
+  ADFLOW_AI_PROVIDER = "mock"
+  ADFLOW_GITHUB_PROVIDER = "memory"
+  ADFLOW_STORAGE_PROVIDER = "supabase"
+  ADFLOW_SUPABASE_TABLE = "adflow_runs"
+  DEMAND_SYNTHETIC_FALLBACK = "true"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1

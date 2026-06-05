@@ -13,7 +13,7 @@ from backend.services.ai.lp_improvement_service import LPImprovementResult
 from backend.services.ai.review_service import ReviewResult
 from backend.services.history.change_history_service import ChangeHistoryService
 from backend.services.lp.lp_collector import LPCollection
-from backend.services.market.market_research_service import MarketResearchService
+from backend.services.demand.demand_intelligence_service import DemandIntelligenceService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
 from backend.services.supabase.supabase_repository import SupabaseRepository
@@ -79,6 +79,31 @@ class HistoryAwareRecommendation(BaseModel):
     market_fit_analysis: str = ""
     recommended_positioning: list[str] = Field(default_factory=list)
     market_opportunities: list[str] = Field(default_factory=list)
+    feature_suggestions: list[dict[str, Any]] = Field(default_factory=list)
+    demand_signal_scores: list[dict[str, Any]] = Field(default_factory=list)
+    trend_analysis: list[dict[str, Any]] = Field(default_factory=list)
+    competitor_gaps: list[dict[str, Any]] = Field(default_factory=list)
+    root_causes: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_summary: list[dict[str, Any]] = Field(default_factory=list)
+    validation_summary: dict[str, Any] = Field(default_factory=dict)
+    solution_fit_summary: dict[str, Any] = Field(default_factory=dict)
+    monitoring_summary: dict[str, Any] = Field(default_factory=dict)
+    source_status_summary: dict[str, Any] = Field(default_factory=dict)
+    strong_validated_clusters: list[dict[str, Any]] = Field(default_factory=list)
+    weak_or_noisy_clusters: list[dict[str, Any]] = Field(default_factory=list)
+    matched_solution_pains: list[str] = Field(default_factory=list)
+    unmatched_solution_pains: list[str] = Field(default_factory=list)
+    emerging_demand_signals: list[dict[str, Any]] = Field(default_factory=list)
+    growing_demand_signals: list[dict[str, Any]] = Field(default_factory=list)
+    search_demand_summary: dict[str, Any] = Field(default_factory=dict)
+    market_size_summary: dict[str, Any] = Field(default_factory=dict)
+    outcome_learning_summary: dict[str, Any] = Field(default_factory=dict)
+    validated_demand_patterns: list[str] = Field(default_factory=list)
+    failed_demand_patterns: list[str] = Field(default_factory=list)
+    inconclusive_demand_patterns: list[str] = Field(default_factory=list)
+    promising_segments: list[dict[str, Any]] = Field(default_factory=list)
+    small_market_warnings: list[str] = Field(default_factory=list)
+    recommended_next_tests: list[str] = Field(default_factory=list)
     outcome_insights: list[HistoryInsight] = Field(default_factory=list)
     successful_improvement_patterns: list[str] = Field(default_factory=list)
     failed_improvement_patterns: list[str] = Field(default_factory=list)
@@ -106,7 +131,7 @@ class RegisteredPairAnalysisService:
         feature_extractor: FeatureExtractor,
         llm_client: LLMClient,
         openai_llm_client: LLMClient | None = None,
-        market_research_service: MarketResearchService | None = None,
+        demand_intelligence_service: DemandIntelligenceService | None = None,
         outcome_service: ImprovementOutcomeService | None = None,
         orchestrator: AIOrchestrator | None = None,
     ) -> None:
@@ -115,11 +140,11 @@ class RegisteredPairAnalysisService:
         self.feature_extractor = feature_extractor
         self.llm_client = llm_client
         self.openai_llm_client = openai_llm_client
-        self.market_research_service = market_research_service
+        self.demand_intelligence_service = demand_intelligence_service
         self.outcome_service = outcome_service
         self.orchestrator = orchestrator or AIOrchestrator(repository=repository)
 
-    def run(self, *, user_id: str, pair_id: str, ai_mode: str = "multi_provider") -> dict[str, Any]:
+    def run(self, *, user_id: str, pair_id: str, ai_mode: str = "multi_provider", locale: str = "ja") -> dict[str, Any]:
         if ai_mode not in {"multi_provider", "openai_only"}:
             raise ValueError("Invalid ai_mode.")
         if ai_mode == "openai_only" and self.openai_llm_client is None:
@@ -143,9 +168,9 @@ class RegisteredPairAnalysisService:
             order="created_at.desc",
             limit=5,
         )
-        market_research = (
-            self.market_research_service.latest_context_for_pair(user_id=user_id, pair_id=pair_id)
-            if self.market_research_service
+        demand_intelligence = (
+            self.demand_intelligence_service.latest_context_for_pair(user_id=user_id, pair_id=pair_id)
+            if self.demand_intelligence_service
             else None
         )
         outcome_context = (
@@ -173,12 +198,13 @@ class RegisteredPairAnalysisService:
             objective="pair_analysis_with_review_and_diff_readiness",
             context={
                 "ai_mode": ai_mode,
+                "locale": locale,
                 "twitter_ad": twitter_ad,
                 "landing_page": landing_page,
                 "pair": pair,
                 "history": history,
                 "previous_runs": previous_runs,
-                "market_research": market_research,
+                "demand_intelligence": demand_intelligence,
                 "improvement_outcomes": outcome_context,
                 "features": features.model_dump(mode="json"),
                 "message_match_score": message_match_score,
@@ -189,12 +215,13 @@ class RegisteredPairAnalysisService:
 
         recommendation = self._recommend(
             ai_mode=ai_mode,
+            locale=locale,
             twitter_ad=twitter_ad,
             landing_page=landing_page,
             pair=pair,
             history=history,
             previous_runs=previous_runs,
-            market_research=market_research,
+            demand_intelligence=demand_intelligence,
             improvement_outcomes=outcome_context,
             features=features.model_dump(),
             message_match_score=message_match_score,
@@ -225,7 +252,7 @@ class RegisteredPairAnalysisService:
                 "history_insights": {
                     **recommendation.model_dump(mode="json"),
                     "ai_mode": ai_mode,
-                    "market_research_run_id": market_research.get("id") if market_research else None,
+                    "demand_intelligence_run_id": demand_intelligence.get("id") if demand_intelligence else None,
                     "orchestration_run_id": orchestration.run["id"],
                     "route_plan": [step.model_dump(mode="json") for step in orchestration.route_plan],
                     "agent_results": [
@@ -267,12 +294,25 @@ class RegisteredPairAnalysisService:
             system_prompt=(
                 "Analyze a registered X ad and landing page pair. Return only JSON matching "
                 "HistoryAwareRecommendation. Prioritize message mismatch between ad and LP. "
-                "Use market_research only as directional context for pains, competitors, search intent, "
-                "and positioning gaps. Do not make demand verdicts, success predictions, or revenue forecasts. "
+                "Use demand_intelligence only as directional context for pain clusters, desire clusters, "
+                "demand signal scores, competitor gaps, root causes, evidence, positioning, feature ideas, "
+                "ad appeals, and LP improvement context. Do not make demand verdicts, success predictions, "
+                "or revenue forecasts. Every market-related conclusion must remain traceable to evidence_summary. "
+                "Low validation_score clusters must not be treated as strong evidence. "
+                "Spike or noise trend statuses require cautious wording. "
+                "If solution_fit_summary includes unmatched pains, reflect them in ad and LP improvement options. "
+                "Use emerging and growing demand signals as next-test hypotheses only. "
+                "Use search_demand_summary as search-intent evidence only; never assert exact search volume. "
+                "Use market_size_summary as a cautious audience-range estimate, not a market-size verdict. "
+                "Prioritize recommendations only when validation, search demand, market size, solution fit, "
+                "and positive outcome learning point in the same direction. "
+                "When prior outcome learning is negative or search/market evidence is weak, frame the change "
+                "as a small test or warning instead of a strong claim. "
                 "Use improvement_outcomes as measured history. Check successful, failed, and inconclusive patterns "
                 "before recommending a repeated change. Do not claim future success from past outcomes. "
                 "Use change history carefully: avoid confident claims when metrics are missing, "
                 "treat frequently changed fields as risky, and frame uncertain findings as hypotheses."
+                f" Respond in {'Japanese' if payload.get('locale') == 'ja' else 'English'}."
             ),
             user_payload=payload,
             response_model=HistoryAwareRecommendation,

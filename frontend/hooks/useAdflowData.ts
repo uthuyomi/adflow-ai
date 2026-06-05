@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { runWorkflow } from "@/lib/api/client";
-import { listRecentImprovementOutcomes, listRecentMarketResearchRuns } from "@/lib/supabase/adflow-repository";
+import { listRecentDemandIntelligenceRuns, listRecentImprovementOutcomes } from "@/lib/supabase/adflow-repository";
 
 export const queryKeys = {
   workflow: ["workflow"] as const,
@@ -11,7 +11,7 @@ export const queryKeys = {
   improvements: ["improvements"] as const,
   improvement: (id: string) => ["improvement", id] as const,
   prs: ["pull-requests"] as const,
-  marketResearch: ["market-research-dashboard"] as const,
+  demandIntelligence: ["demand-intelligence-dashboard"] as const,
   outcomes: ["outcomes-dashboard"] as const,
 };
 
@@ -24,10 +24,10 @@ export function useWorkflow() {
   });
 }
 
-export function useMarketResearchDashboard() {
+export function useDemandIntelligenceDashboard() {
   return useQuery({
-    queryKey: queryKeys.marketResearch,
-    queryFn: () => listRecentMarketResearchRuns(10),
+    queryKey: queryKeys.demandIntelligence,
+    queryFn: () => listRecentDemandIntelligenceRuns(10),
     staleTime: 60_000,
     retry: 1,
   });

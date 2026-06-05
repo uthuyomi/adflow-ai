@@ -16,31 +16,25 @@ class DeterministicLLMClient:
         if response_model.__name__ == "AdImprovementResult":
             return {
                 "problems": [
-                    "CTR is declining on the selected segment.",
-                    "The ad hook is less specific than the landing page value.",
+                    "No registered ad performance pattern was provided to this standalone workflow.",
+                    "Use a real ad and LP pair before treating this as an implementation recommendation.",
                 ],
                 "suggestions": [
-                    "Make the outcome concrete in the headline.",
-                    "Align the CTA with the landing page hero promise.",
+                    "Run analysis against registered ad and LP records.",
+                    "Use Demand Intelligence evidence and measured outcomes before changing copy.",
                 ],
-                "headlines": [
-                    "Create 50 Google Maps routes in 30 seconds",
-                    "Turn address lists into routes faster",
-                ],
-                "bodies": [
-                    "Upload addresses and generate route-ready maps without manual sorting.",
-                    "Reduce repetitive route setup work for field teams.",
-                ],
-                "ctas": ["Try route automation", "Create routes faster"],
+                "headlines": [],
+                "bodies": [],
+                "ctas": [],
             }
 
         if response_model.__name__ == "LPImprovementResult":
             return {
-                "hero": ["Replace abstract hero copy with a measurable workflow outcome."],
-                "cta": ["Use one primary CTA above the fold and repeat it after proof points."],
-                "faq": ["Add FAQ items for import limits, supported formats, and setup time."],
-                "structure": ["Move proof points before secondary feature details."],
-                "mobile_ui": ["Keep the first mobile viewport focused on title, proof, and CTA."],
+                "hero": [],
+                "cta": [],
+                "faq": [],
+                "structure": [],
+                "mobile_ui": [],
             }
 
         if response_model.__name__ == "DiffResult":
@@ -50,12 +44,7 @@ class DeterministicLLMClient:
                 "files": [
                     {
                         "path": path,
-                        "changes": [
-                            {
-                                "before": "Create routes easily",
-                                "after": "Turn 50 addresses into Google Maps routes in 30 seconds",
-                            },
-                        ],
+                        "changes": [],
                     },
                 ],
             }
@@ -74,11 +63,13 @@ class DeterministicLLMClient:
             ad = user_payload.get("twitter_ad", {})
             lp = user_payload.get("landing_page", {})
             history = user_payload.get("history", [])
-            market = user_payload.get("market_research") or {}
-            market_summary = market.get("summary") or {}
-            main_pain_points = market_summary.get("main_pain_points") or []
-            main_competitors = market_summary.get("main_competitors") or []
-            opportunities = market_summary.get("opportunities") or []
+            demand = user_payload.get("demand_intelligence") or {}
+            demand_summary = demand.get("summary") or {}
+            is_ja = user_payload.get("locale") == "ja"
+            pair_context = demand_summary.get("pair_analysis_context") or {}
+            top_pain_clusters = demand_summary.get("top_pain_clusters") or []
+            top_demand_signals = demand_summary.get("top_demand_signals") or []
+            opportunities = demand_summary.get("opportunities") or []
             outcomes = user_payload.get("improvement_outcomes") or {}
             recent_outcomes = outcomes.get("recent_outcomes") or []
             successful_patterns = outcomes.get("successful_patterns") or []
@@ -90,16 +81,17 @@ class DeterministicLLMClient:
                 else "No prior edits are available, so treat this as an initial hypothesis."
             )
             return {
-                "overall_diagnosis": "The ad and landing page should be tested for message match before broad copy changes.",
+                "overall_diagnosis": "広告とLPの約束が一致しているかを、広範なコピー変更より先に検証すべきです。" if is_ja else "The ad and landing page should be tested for message match before broad copy changes.",
                 "likely_problem": (
-                    f"Hero similarity is {features.get('hero_similarity', 0)} and CTA strength is "
-                    f"{features.get('cta_strength', 0)}, so the main risk is ad-to-LP promise mismatch."
+                    f"Hero similarityは{features.get('hero_similarity', 0)}、CTA strengthは{features.get('cta_strength', 0)}です。主なリスクは広告からLPへの期待値のズレです。"
+                    if is_ja
+                    else f"Hero similarity is {features.get('hero_similarity', 0)} and CTA strength is {features.get('cta_strength', 0)}, so the main risk is ad-to-LP promise mismatch."
                 ),
                 "history_based_insights": [
                     {
-                        "finding": "Change history should constrain the next test.",
+                        "finding": "変更履歴を次のテスト範囲の制約として扱うべきです。" if is_ja else "Change history should constrain the next test.",
                         "evidence": history_note,
-                        "recommendation": "Prioritize the smallest copy change that improves message match.",
+                        "recommendation": "message matchを改善する最小のコピー変更を優先してください。" if is_ja else "Prioritize the smallest copy change that improves message match.",
                     },
                 ],
                 "ad_recommendations": [
@@ -107,8 +99,8 @@ class DeterministicLLMClient:
                         "field": "headline",
                         "current_value": ad.get("headline") or "",
                         "suggested_value": lp.get("hero_title") or "Mirror the LP hero promise in the ad headline",
-                        "reason": "Align the ad hook with the first LP message before testing new claims.",
-                        "expected_effect": "Higher click quality and lower bounce risk.",
+                        "reason": "新しい訴求を試す前に、広告のフックとLPファーストビューを揃えるためです。" if is_ja else "Align the ad hook with the first LP message before testing new claims.",
+                        "expected_effect": "クリック後の期待値ズレと直帰リスクの低下。" if is_ja else "Higher click quality and lower bounce risk.",
                         "risk": "low",
                     },
                 ],
@@ -117,47 +109,80 @@ class DeterministicLLMClient:
                         "field": "primary_cta",
                         "current_value": lp.get("primary_cta") or "",
                         "suggested_value": ad.get("cta") or "Use the same CTA as the ad",
-                        "reason": "CTA continuity reduces the handoff cost from ad click to LP action.",
-                        "expected_effect": "Improved conversion clarity.",
+                        "reason": "広告クリックからLP上の行動までCTAを連続させるためです。" if is_ja else "CTA continuity reduces the handoff cost from ad click to LP action.",
+                        "expected_effect": "CV導線の明確化。" if is_ja else "Improved conversion clarity.",
                         "risk": "low",
                     },
                 ],
                 "do_not_change": [
                     {
                         "field": "offer_text",
-                        "reason": "Do not change the offer until message match is measured with the current promise.",
+                        "reason": "現在の約束でmessage matchを測定するまで、オファー変更は避けます。" if is_ja else "Do not change the offer until message match is measured with the current promise.",
                     },
                 ],
                 "next_test_plan": {
-                    "hypothesis": "Matching ad headline and LP hero will reduce bounce from mismatched expectations.",
+                    "hypothesis": "広告見出しとLPヒーローを揃えると、期待値ズレによる直帰が下がる可能性があります。" if is_ja else "Matching ad headline and LP hero will reduce bounce from mismatched expectations.",
                     "test_target": "headline and primary_cta",
                     "success_metric": "bounce_rate and cvr",
                     "duration_days": 7,
                 },
                 "market_insights": [
+                    *(pair_context.get("market_insights") or []),
                     {
-                        "finding": "Market research should shape the next hypothesis, not decide demand.",
-                        "evidence": ", ".join(main_pain_points[:3]) if main_pain_points else "No market research run is attached yet.",
-                        "recommendation": "Compare the ad promise and LP first viewport against the most repeated market pains.",
+                        "finding": "Demand intelligence should shape the next hypothesis, not decide demand.",
+                        "evidence": ", ".join(str(item.get("name") or item) for item in top_pain_clusters[:3]) if top_pain_clusters else "No demand intelligence run is attached yet.",
+                        "recommendation": "Compare the ad promise and LP first viewport against repeated pain and desire clusters.",
                     },
                 ],
-                "competitor_summary": main_competitors[:5],
+                "competitor_summary": pair_context.get("competitor_summary") or [],
                 "pain_point_alignment": [
+                    *(pair_context.get("pain_point_alignment") or []),
                     {
                         "finding": "Ad and LP should mention a concrete workflow pain.",
-                        "evidence": str(main_pain_points[0]) if main_pain_points else "Market pain points are not available.",
+                        "evidence": str(top_pain_clusters[0].get("name")) if top_pain_clusters else "Pain clusters are not available.",
                         "recommendation": "Use the next copy test to connect the product promise to that pain explicitly.",
                     },
                 ],
-                "positioning_opportunities": opportunities[:5],
-                "market_alignment_score": 55 if market else 0,
+                "positioning_opportunities": pair_context.get("positioning_opportunities") or [],
+                "market_alignment_score": pair_context.get("market_alignment_score") or (55 if demand else 0),
                 "market_fit_analysis": (
-                    "Market research materials are available and should be used as directional context for message fit."
-                    if market
-                    else "No market research run is attached, so market fit analysis is limited to ad, LP, and history data."
+                    pair_context.get("market_fit_analysis")
+                    or (
+                        "Demand intelligence materials are available and should be used as directional context for message fit."
+                        if demand
+                        else "No demand intelligence run is attached, so market fit analysis is limited to ad, LP, and history data."
+                    )
                 ),
-                "recommended_positioning": opportunities[:3] or ["Run market research before locking positioning."],
-                "market_opportunities": opportunities[:5],
+                "recommended_positioning": pair_context.get("recommended_positioning") or ["Run demand intelligence before locking positioning."],
+                "market_opportunities": pair_context.get("market_opportunities") or [str(item.get("name") or item) for item in opportunities[:5]],
+                "feature_suggestions": pair_context.get("feature_suggestions") or [],
+                "demand_signal_scores": pair_context.get("demand_signal_scores") or [
+                    {"cluster": item.get("name"), "score": item.get("demand_signal_score")}
+                    for item in top_demand_signals[:5]
+                ],
+                "trend_analysis": pair_context.get("trend_analysis") or [],
+                "competitor_gaps": pair_context.get("competitor_gaps") or [],
+                "root_causes": pair_context.get("root_causes") or [],
+                "evidence_summary": pair_context.get("evidence_summary") or [],
+                "validation_summary": pair_context.get("validation_summary") or {},
+                "solution_fit_summary": pair_context.get("solution_fit_summary") or {},
+                "monitoring_summary": pair_context.get("monitoring_summary") or {},
+                "source_status_summary": pair_context.get("source_status_summary") or {},
+                "search_demand_summary": pair_context.get("search_demand_summary") or {},
+                "market_size_summary": pair_context.get("market_size_summary") or {},
+                "outcome_learning_summary": pair_context.get("outcome_learning_summary") or {},
+                "strong_validated_clusters": pair_context.get("strong_validated_clusters") or [],
+                "weak_or_noisy_clusters": pair_context.get("weak_or_noisy_clusters") or [],
+                "matched_solution_pains": pair_context.get("matched_solution_pains") or [],
+                "unmatched_solution_pains": pair_context.get("unmatched_solution_pains") or [],
+                "emerging_demand_signals": pair_context.get("emerging_demand_signals") or [],
+                "growing_demand_signals": pair_context.get("growing_demand_signals") or [],
+                "validated_demand_patterns": pair_context.get("validated_demand_patterns") or [],
+                "failed_demand_patterns": pair_context.get("failed_demand_patterns") or [],
+                "inconclusive_demand_patterns": pair_context.get("inconclusive_demand_patterns") or [],
+                "promising_segments": pair_context.get("promising_segments") or [],
+                "small_market_warnings": pair_context.get("small_market_warnings") or [],
+                "recommended_next_tests": pair_context.get("recommended_next_tests") or [],
                 "outcome_insights": [
                     {
                         "finding": "Past measured outcomes should constrain the next recommendation.",

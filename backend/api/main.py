@@ -32,25 +32,42 @@ from backend.services.analytics.storage_service import (
     InMemoryCollectionStorage,
     SupabaseCollectionStorage,
 )
+from backend.services.billing.credits import CREDIT_COSTS, CreditService, InsufficientCreditsError
 from backend.services.github.github_pr_client import GitHubPRClient
 from backend.services.github.in_memory_pr_client import InMemoryPullRequestClient
 from backend.services.github.pr_service import PRService
 from backend.services.history.change_history_service import ChangeHistoryService
 from backend.services.lp.lp_collector import LPCollection, LPCollector
-from backend.services.market.market_research_service import MarketResearchService
+from backend.services.demand.demand_intelligence_service import DemandIntelligenceService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 app = FastAPI(title="AdFlow AI")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+
+
+def _cors_origins() -> list[str]:
+    default_origins = [
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3020",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
-    ],
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:3020",
+    ]
+    configured = [
+        origin.strip().rstrip("/")
+        for origin in os.getenv("ADFLOW_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    return [*default_origins, *configured]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,12 +96,19 @@ class DecisionRequest(BaseModel):
 
 class PairAnalysisRequest(BaseModel):
     ai_mode: Literal["multi_provider", "openai_only"] = "openai_only"
+    locale: Literal["ja", "en"] = "ja"
 
 
-class MarketResearchRunRequest(BaseModel):
+class DemandIntelligenceRunRequest(BaseModel):
     project_id: str | None = None
     ad_lp_pair_id: str
     query: str
+    locale: Literal["ja", "en"] = "ja"
+
+
+class DemandSolutionFitRequest(BaseModel):
+    fit_target_type: Literal["app_idea", "ad_copy", "lp_hero", "lp_offer", "feature", "positioning", "pair"]
+    fit_target_text: str
 
 
 class OutcomeCreateRequest(BaseModel):
@@ -115,16 +139,6 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/workflow/run", response_model=AdFlowWorkflowResult)
-def run_workflow(request: AdFlowRunRequest | None = None) -> AdFlowWorkflowResult:
-    request = request or AdFlowRunRequest()
-    try:
-        workflow = _build_workflow(request.ads, request.lp, load_settings())
-        return workflow.run(request.workflow)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 def _authenticated_user_id(authorization: str | None = Header(default=None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Bearer token is required.")
@@ -141,6 +155,22 @@ def _authenticated_user_id(authorization: str | None = Header(default=None)) -> 
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
+@app.post("/workflow/run", response_model=AdFlowWorkflowResult)
+def run_workflow(
+    request: AdFlowRunRequest | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> AdFlowWorkflowResult:
+    request = request or AdFlowRunRequest()
+    try:
+        _require_feature_credits(user_id=user_id, feature_key="workflow_run")
+        workflow = _build_workflow(request.ads, request.lp, load_settings())
+        result = workflow.run(request.workflow)
+        _consume_feature_credits(user_id=user_id, feature_key="workflow_run", metadata={"endpoint": "/workflow/run"})
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/analysis/pairs/{pair_id}/run")
 def run_pair_analysis(
     pair_id: str,
@@ -149,11 +179,19 @@ def run_pair_analysis(
 ) -> dict[str, Any]:
     request = request or PairAnalysisRequest()
     try:
-        return _build_registered_pair_analysis(load_settings()).run(
+        _require_feature_credits(user_id=user_id, feature_key="pair_analysis")
+        result = _build_registered_pair_analysis(load_settings()).run(
             user_id=user_id,
             pair_id=pair_id,
             ai_mode=request.ai_mode,
+            locale=request.locale,
         )
+        _consume_feature_credits(
+            user_id=user_id,
+            feature_key="pair_analysis",
+            metadata={"endpoint": "/analysis/pairs/{pair_id}/run", "pair_id": pair_id},
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -186,30 +224,37 @@ def latest_pair_analysis_run(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.post("/market-research/run")
-def run_market_research(
-    request: MarketResearchRunRequest,
+@app.post("/demand-intelligence/run")
+def run_demand_intelligence(
+    request: DemandIntelligenceRunRequest,
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
-        run = _build_market_research_service(load_settings()).run(
+        _require_feature_credits(user_id=user_id, feature_key="demand_intelligence")
+        run = _build_demand_intelligence_service(load_settings()).run(
             user_id=user_id,
             project_id=request.project_id,
             ad_lp_pair_id=request.ad_lp_pair_id,
             query=request.query,
+            locale=request.locale,
+        )
+        _consume_feature_credits(
+            user_id=user_id,
+            feature_key="demand_intelligence",
+            metadata={"endpoint": "/demand-intelligence/run", "run_id": run["id"]},
         )
         return {"run_id": run["id"], "status": run["status"], "run": run}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/market-research/pairs/{pair_id}/latest")
-def latest_market_research(
+@app.get("/demand-intelligence/pairs/{pair_id}/latest")
+def latest_demand_intelligence(
     pair_id: str,
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
-        return _build_market_research_service(load_settings()).latest_for_pair(
+        return _build_demand_intelligence_service(load_settings()).latest_for_pair(
             user_id=user_id,
             pair_id=pair_id,
         )
@@ -217,18 +262,136 @@ def latest_market_research(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.get("/market-research/pairs/{pair_id}/runs")
-def list_market_research_runs(
+@app.get("/demand-intelligence/pairs/{pair_id}/runs")
+def list_demand_intelligence_runs(
     pair_id: str,
     user_id: str = Depends(_authenticated_user_id),
 ) -> list[dict[str, Any]]:
     try:
-        return _build_market_research_service(load_settings()).list_for_pair(
+        return _build_demand_intelligence_service(load_settings()).list_for_pair(
             user_id=user_id,
             pair_id=pair_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/demand-intelligence/runs/{run_id}")
+def get_demand_intelligence_run(
+    run_id: str,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/demand-intelligence/runs/{run_id}/signals")
+def get_demand_signals(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    return _repository_for_settings(load_settings()).get_related_many("demand_intelligence_signals", filters={"run_id": run_id}, order="created_at.asc")
+
+
+@app.get("/demand-intelligence/runs/{run_id}/clusters")
+def get_demand_clusters(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    return _repository_for_settings(load_settings()).get_related_many("demand_intelligence_clusters", filters={"run_id": run_id}, order="demand_signal_score.desc")
+
+
+@app.get("/demand-intelligence/runs/{run_id}/validations")
+def get_demand_validations(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _repository_for_settings(load_settings()).get_demand_validations_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.get("/demand-intelligence/runs/{run_id}/solution-fits")
+def get_demand_solution_fits(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _repository_for_settings(load_settings()).get_demand_solution_fits_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.get("/demand-intelligence/runs/{run_id}/snapshots")
+def get_demand_snapshots(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    run = _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    return _repository_for_settings(load_settings()).get_many("demand_signal_snapshots", user_id=user_id, filters={"run_id": run["id"]}, order="created_at.desc")
+
+
+@app.get("/demand-intelligence/runs/{run_id}/source-runs")
+def get_demand_source_runs(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _repository_for_settings(load_settings()).get_demand_source_runs_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.get("/demand-intelligence/runs/{run_id}/search-demand")
+def get_demand_search_demand(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    return _repository_for_settings(load_settings()).get_demand_search_signals_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.get("/demand-intelligence/runs/{run_id}/market-size")
+def get_demand_market_size(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    return _repository_for_settings(load_settings()).get_demand_market_size_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.get("/demand-intelligence/runs/{run_id}/outcome-learning")
+def get_demand_outcome_learning(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    return _repository_for_settings(load_settings()).get_demand_outcome_learning_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.post("/demand-intelligence/runs/{run_id}/outcome-learning/rebuild")
+def rebuild_demand_outcome_learning(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        _require_feature_credits(user_id=user_id, feature_key="outcome_learning_rebuild")
+        result = _build_demand_intelligence_service(load_settings()).rebuild_outcome_learning(user_id=user_id, run_id=run_id)
+        _consume_feature_credits(
+            user_id=user_id,
+            feature_key="outcome_learning_rebuild",
+            metadata={"endpoint": "/demand-intelligence/runs/{run_id}/outcome-learning/rebuild", "run_id": run_id},
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/demand-intelligence/runs/{run_id}/evidence")
+def get_demand_evidence(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    _build_demand_intelligence_service(load_settings()).get_run(user_id=user_id, run_id=run_id)
+    return _repository_for_settings(load_settings()).get_demand_evidence_for_run(run_id=run_id)
+
+
+@app.post("/demand-intelligence/runs/{run_id}/solution-fit")
+def run_demand_solution_fit(
+    run_id: str,
+    request: DemandSolutionFitRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        _require_feature_credits(user_id=user_id, feature_key="demand_solution_fit")
+        result = _build_demand_intelligence_service(load_settings()).create_solution_fit(
+            user_id=user_id,
+            run_id=run_id,
+            fit_target_type=request.fit_target_type,
+            fit_target_text=request.fit_target_text,
+        )
+        _consume_feature_credits(
+            user_id=user_id,
+            feature_key="demand_solution_fit",
+            metadata={"endpoint": "/demand-intelligence/runs/{run_id}/solution-fit", "run_id": run_id},
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/demand-intelligence/pairs/{pair_id}/monitoring")
+def get_pair_demand_monitoring(pair_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    snapshots = _repository_for_settings(load_settings()).get_demand_snapshots_for_cluster(user_id=user_id, pair_id=pair_id, limit=200)
+    return {
+        "snapshots": snapshots,
+        "emerging_clusters": [item for item in snapshots if item.get("trend_status") == "emerging"],
+        "growing_clusters": [item for item in snapshots if item.get("trend_status") == "growing"],
+        "declining_clusters": [item for item in snapshots if item.get("trend_status") == "declining"],
+    }
 
 
 @app.post("/outcomes")
@@ -355,10 +518,55 @@ def generate_codex_task(
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
-        return _build_orchestrator(load_settings()).build_codex_task_prompt(
+        _require_feature_credits(user_id=user_id, feature_key="codex_task")
+        result = _build_orchestrator(load_settings()).build_codex_task_prompt(
             user_id=user_id,
             result_id=result_id,
         )
+        _consume_feature_credits(
+            user_id=user_id,
+            feature_key="codex_task",
+            metadata={"endpoint": "/orchestration/results/{result_id}/codex-task", "result_id": result_id},
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/billing/me")
+def get_billing_profile(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        rows = _repository_for_settings(load_settings()).get_many(
+            "user_billing_profiles",
+            user_id=user_id,
+            limit=1,
+        )
+        if not rows:
+            return {
+                "plan": "free",
+                "subscriptionStatus": "inactive",
+                "currentPeriodEnd": None,
+            }
+        profile = rows[0]
+        return {
+            "plan": profile.get("plan", "free"),
+            "subscriptionStatus": profile.get("subscription_status", "inactive"),
+            "currentPeriodEnd": profile.get("current_period_end"),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/credits/me")
+def get_credit_balance(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        balance = CreditService(_repository_for_settings(load_settings())).get_balance(user_id)
+        return {
+            "monthlyCredits": balance["monthly_credits"],
+            "purchasedCredits": balance["purchased_credits"],
+            "totalCredits": balance["total_credits"],
+            "lifetimeUsedCredits": balance["lifetime_used_credits"],
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -420,7 +628,7 @@ def _build_registered_pair_analysis(settings: Settings) -> RegisteredPairAnalysi
         feature_extractor=FeatureExtractor(),
         llm_client=_build_llm_client(settings),
         openai_llm_client=_build_openai_llm_client(settings),
-        market_research_service=MarketResearchService(repository=repository),
+        demand_intelligence_service=DemandIntelligenceService(repository=repository, settings=settings),
         outcome_service=ImprovementOutcomeService(repository=repository),
         orchestrator=AIOrchestrator(
             repository=repository,
@@ -429,15 +637,58 @@ def _build_registered_pair_analysis(settings: Settings) -> RegisteredPairAnalysi
     )
 
 
-def _build_market_research_service(settings: Settings) -> MarketResearchService:
+def _build_demand_intelligence_service(settings: Settings) -> DemandIntelligenceService:
     if settings.supabase_url is None or settings.supabase_key is None:
         raise ValueError("SUPABASE_URL and Supabase key are required.")
-    return MarketResearchService(
-        repository=SupabaseRepository(
-            supabase_url=settings.supabase_url,
-            supabase_key=settings.supabase_key,
-        ),
+    return DemandIntelligenceService(repository=_repository_for_settings(settings), settings=settings)
+
+
+def _repository_for_settings(settings: Settings) -> SupabaseRepository:
+    if settings.supabase_url is None or settings.supabase_key is None:
+        raise ValueError("SUPABASE_URL and Supabase key are required.")
+    return SupabaseRepository(
+        supabase_url=settings.supabase_url,
+        supabase_key=settings.supabase_key,
     )
+
+
+def _consume_feature_credits(user_id: str, feature_key: str, metadata: dict[str, Any]) -> None:
+    cost = CREDIT_COSTS[feature_key]
+    try:
+        CreditService(_repository_for_settings(load_settings())).consume(
+            user_id=user_id,
+            amount=cost.amount,
+            reason=cost.reason,
+            metadata=metadata,
+        )
+    except InsufficientCreditsError as exc:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "INSUFFICIENT_CREDITS",
+                "message": "Credits are insufficient.",
+                "requiredCredits": exc.required_credits,
+                "currentCredits": exc.current_credits,
+            },
+        ) from exc
+
+
+def _require_feature_credits(user_id: str, feature_key: str) -> None:
+    cost = CREDIT_COSTS[feature_key]
+    try:
+        enough, total = CreditService(_repository_for_settings(load_settings())).has_enough(user_id, cost.amount)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not enough:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "INSUFFICIENT_CREDITS",
+                "message": "Credits are insufficient.",
+                "requiredCredits": cost.amount,
+                "currentCredits": total,
+            },
+        )
 
 
 def _build_outcome_service(settings: Settings) -> ImprovementOutcomeService:
@@ -507,7 +758,9 @@ def _build_storage(
 
 class StaticAdsDataSource:
     def __init__(self, ads: FullAdsCollection | None = None) -> None:
-        self.ads = ads or FullAdsCollection.model_validate(_sample_ads_payload())
+        if ads is None:
+            raise ValueError("ads payload is required; dummy workflow data has been removed.")
+        self.ads = ads
 
     def fetch_campaigns(self) -> list[dict[str, Any]]:
         return _dump_list(self.ads.campaigns)
@@ -527,7 +780,9 @@ class StaticAdsDataSource:
 
 class StaticLPDataSource:
     def __init__(self, lp: LPCollection | None = None) -> None:
-        self.lp = lp or LPCollection.model_validate(_sample_lp_payload())
+        if lp is None:
+            raise ValueError("lp payload is required; dummy workflow data has been removed.")
+        self.lp = lp
 
     def fetch_structure(self) -> dict[str, Any]:
         return self.lp.structure.model_dump(mode="json", by_alias=True)
@@ -541,95 +796,6 @@ class StaticLPDataSource:
 
 def _dump_list(items: list[BaseModel]) -> list[dict[str, Any]]:
     return [item.model_dump(mode="json") for item in items]
-
-
-def _sample_ads_payload() -> dict[str, Any]:
-    return {
-        "campaigns": [
-            {
-                "campaign_id": "cmp_001",
-                "campaign_name": "Route Automation Launch",
-                "budget": 120000,
-                "start_date": "2026-05-01",
-                "end_date": None,
-                "status": "active",
-            },
-        ],
-        "ad_groups": [
-            {
-                "targeting": {"keyword": "route planning"},
-                "interests": ["field sales", "delivery", "operations"],
-                "age_range": "25-54",
-                "gender": "all",
-                "location": "JP",
-                "device": "mobile",
-            },
-        ],
-        "ads": [
-            {
-                "headline": "Create routes easily",
-                "body": "Turn address lists into Google Maps routes.",
-                "cta": "Try for free",
-                "image": None,
-                "video": None,
-            },
-        ],
-        "performance": [
-            {
-                "campaign_id": "cmp_001",
-                "impressions": 20000,
-                "clicks": 1480,
-                "ctr": 7.4,
-                "cpc": 96.0,
-                "cvr": 3.1,
-                "spend": 142080.0,
-                "conversions": 45,
-                "reach": 18000,
-                "frequency": 1.11,
-            },
-            {
-                "campaign_id": "cmp_001",
-                "impressions": 22000,
-                "clicks": 1034,
-                "ctr": 4.7,
-                "cpc": 132.0,
-                "cvr": 2.2,
-                "spend": 136488.0,
-                "conversions": 23,
-                "reach": 19000,
-                "frequency": 1.16,
-            },
-        ],
-        "time": [
-            {
-                "timestamp": "2026-05-27T10:00:00+09:00",
-                "hour": 10,
-                "weekday": "Friday",
-            },
-        ],
-    }
-
-
-def _sample_lp_payload() -> dict[str, Any]:
-    return {
-        "structure": {
-            "hero_title": "Create routes easily",
-            "hero_subtitle": "Prepare address lists for Google Maps.",
-            "CTA_count": 2,
-            "buttons": ["Try for free", "Request materials"],
-            "FAQ": ["Can I use CSV files?", "Can I use it on mobile?"],
-        },
-        "behavior": {
-            "bounce_rate": 74,
-            "session_duration": 42,
-            "scroll_depth": 58,
-        },
-        "performance": {
-            "page_speed": 82,
-            "FCP": 1.2,
-            "LCP": 2.4,
-        },
-    }
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -18,30 +18,31 @@ import {
   X,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/hooks/use-i18n";
 import { useUiStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects", label: "Projects", icon: SquareKanban },
-  { href: "/ads", label: "X Ads", icon: Megaphone },
-  { href: "/lps", label: "Landing Pages", icon: Boxes },
-  { href: "/pairs", label: "Ad LP Pairs", icon: Link2 },
-  { href: "/orchestration", label: "AI OS", icon: BrainCircuit },
-  { href: "/history", label: "History", icon: Clock3 },
-  { href: "/campaigns", label: "Campaigns", icon: Megaphone },
-  { href: "/lp", label: "LP Analysis", icon: Gauge },
-  { href: "/improvements", label: "Improvements", icon: Sparkles, pending: 6 },
-  { href: "/prs", label: "PR Reviews", icon: FileDiff, pending: 3 },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { href: "/projects", labelKey: "nav.projects", icon: SquareKanban },
+  { href: "/ads", labelKey: "nav.ads", icon: Megaphone },
+  { href: "/lps", labelKey: "nav.lps", icon: Boxes },
+  { href: "/pairs", labelKey: "nav.pairs", icon: Link2 },
+  { href: "/orchestration", labelKey: "nav.orchestration", icon: BrainCircuit },
+  { href: "/history", labelKey: "nav.history", icon: Clock3 },
+  { href: "/campaigns", labelKey: "nav.campaigns", icon: Megaphone },
+  { href: "/lp", labelKey: "nav.lpAnalysis", icon: Gauge },
+  { href: "/improvements", labelKey: "nav.improvements", icon: Sparkles },
+  { href: "/prs", labelKey: "nav.prs", icon: FileDiff },
+  { href: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const sidebarOpen = useUiStore((state) => state.sidebarOpen);
   const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
+  const { t } = useI18n();
 
   const sidebar = (
     <aside className="flex h-full w-72 flex-col border-r border-border bg-card">
@@ -51,7 +52,7 @@ export function Sidebar() {
         </div>
         <div>
           <div className="text-base font-semibold tracking-normal">AdFlow AI</div>
-          <div className="text-xs text-muted-foreground">Review-first ad ops</div>
+          <div className="text-xs text-muted-foreground">{t("sidebar.subtitle")}</div>
         </div>
       </div>
 
@@ -73,8 +74,7 @@ export function Sidebar() {
               onClick={() => setSidebarOpen(false)}
             >
               <Icon className="h-4 w-4" />
-              <span className="flex-1">{item.label}</span>
-              {item.pending ? <Badge variant="warning">{item.pending}</Badge> : null}
+              <span className="flex-1">{t(item.labelKey)}</span>
             </Link>
           );
         })}
@@ -82,9 +82,9 @@ export function Sidebar() {
 
       <div className="border-t border-border p-4">
         <div className="rounded-md border border-border bg-background p-4">
-          <div className="text-sm font-semibold">Approval gate</div>
+          <div className="text-sm font-semibold">{t("sidebar.approvalGate")}</div>
           <div className="mt-1 text-xs leading-5 text-muted-foreground">
-            PR creation stays manual. No merge or push controls are exposed.
+            {t("sidebar.approvalCopy")}
           </div>
         </div>
       </div>

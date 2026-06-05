@@ -5,16 +5,43 @@ import { usePathname } from "next/navigation";
 
 import { AuthGate } from "@/components/auth/AuthGate";
 import { Header } from "@/components/layout/Header";
+import { PublicFooter } from "@/components/layout/PublicFooter";
+import { PublicHeader } from "@/components/layout/PublicHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isLogin = pathname.startsWith("/login");
+  const isPublic =
+    pathname === "/" ||
+    pathname.startsWith("/features") ||
+    pathname.startsWith("/how-it-works") ||
+    pathname.startsWith("/compare") ||
+    pathname.startsWith("/why-adflow") ||
+    pathname.startsWith("/faq") ||
+    pathname.startsWith("/contact") ||
+    pathname.startsWith("/terms") ||
+    pathname.startsWith("/privacy") ||
+    pathname.startsWith("/changelog") ||
+    pathname.startsWith("/use-cases") ||
+    pathname.startsWith("/pricing") ||
+    pathname.startsWith("/legal") ||
+    pathname.startsWith("/billing");
 
   if (isLogin) {
     return (
       <div className="min-h-screen bg-background">
         <AuthGate>{children}</AuthGate>
+      </div>
+    );
+  }
+
+  if (isPublic) {
+    return (
+      <div className="min-h-screen bg-background">
+        <PublicHeader />
+        <main>{children}</main>
+        <PublicFooter />
       </div>
     );
   }

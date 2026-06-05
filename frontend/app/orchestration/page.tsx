@@ -10,9 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useI18n } from "@/hooks/use-i18n";
 import { useAIAgentResults, useAIAgentScorecards, useAIAgents, useAIOrchestrationRuns } from "@/hooks/use-orchestration";
 
 export default function OrchestrationPage() {
+  const { t } = useI18n();
   const agents = useAIAgents();
   const runs = useAIOrchestrationRuns();
   const scorecards = useAIAgentScorecards();
@@ -25,8 +27,8 @@ export default function OrchestrationPage() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="AI Orchestration"
-        description="Route advertising work across specialized AI desks, compare outputs, and keep the improvement loop auditable."
+        title={t("orchestration.title")}
+        description={t("orchestration.description")}
       />
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -40,8 +42,7 @@ export default function OrchestrationPage() {
         <div className="flex gap-3 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 text-warning" />
           <div>
-            Grok/Gemini/OpenAI provider env vars are optional. If a provider is not configured or fails,
-            the orchestration layer stores a mock fallback result with the same schema.
+            {t("orchestration.notice")}
           </div>
         </div>
       </Card>

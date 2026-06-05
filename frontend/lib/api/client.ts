@@ -1,5 +1,7 @@
-import { fallbackWorkflow } from "@/lib/mock-data";
+"use client";
+
 import { WorkflowResultSchema, type WorkflowResult } from "@/lib/schemas";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 
@@ -34,13 +36,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function runWorkflow(): Promise<WorkflowResult> {
-  try {
-    const payload = await request<unknown>("/workflow/run", { method: "POST" });
-    return WorkflowResultSchema.parse(payload);
-  } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      return fallbackWorkflow;
-    }
-    throw error;
+  const supabase = getSupabaseBrowserClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) {
+    throw new ApiError("Login is required.", 401);
   }
+  const payload = await request<unknown>("/workflow/run", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return WorkflowResultSchema.parse(payload);
 }

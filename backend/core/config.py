@@ -22,6 +22,22 @@ class Settings(BaseModel):
     grok_model: str | None = None
     gemini_api_key: str | None = None
     gemini_model: str | None = None
+    demand_real_sources_enabled: bool = False
+    demand_synthetic_fallback: bool = True
+    demand_max_signals_per_run: int = 5000
+    demand_max_signals_per_source: int = 1000
+    demand_connector_timeout_seconds: int = 20
+    demand_connector_max_retries: int = 2
+    x_api_bearer_token: str | None = None
+    youtube_api_key: str | None = None
+    google_custom_search_api_key: str | None = None
+    google_custom_search_engine_id: str | None = None
+    reddit_client_id: str | None = None
+    reddit_client_secret: str | None = None
+    reddit_user_agent: str | None = None
+    demand_embedding_provider: str = "deterministic"
+    demand_embedding_model: str = "deterministic-hash-embedding.v1"
+    openai_embedding_model: str = "text-embedding-3-small"
 
     def validate_runtime(self) -> None:
         if self.ai_provider == "openai":
@@ -68,4 +84,27 @@ def load_settings() -> Settings:
         grok_model=os.getenv("GROK_MODEL"),
         gemini_api_key=os.getenv("GEMINI_API_KEY"),
         gemini_model=os.getenv("GEMINI_MODEL"),
+        demand_real_sources_enabled=_env_bool("DEMAND_REAL_SOURCES_ENABLED", False),
+        demand_synthetic_fallback=_env_bool("DEMAND_SYNTHETIC_FALLBACK", True),
+        demand_max_signals_per_run=int(os.getenv("DEMAND_MAX_SIGNALS_PER_RUN", "5000")),
+        demand_max_signals_per_source=int(os.getenv("DEMAND_MAX_SIGNALS_PER_SOURCE", "1000")),
+        demand_connector_timeout_seconds=int(os.getenv("DEMAND_CONNECTOR_TIMEOUT_SECONDS", "20")),
+        demand_connector_max_retries=int(os.getenv("DEMAND_CONNECTOR_MAX_RETRIES", "2")),
+        x_api_bearer_token=os.getenv("X_API_BEARER_TOKEN"),
+        youtube_api_key=os.getenv("YOUTUBE_API_KEY"),
+        google_custom_search_api_key=os.getenv("GOOGLE_CUSTOM_SEARCH_API_KEY"),
+        google_custom_search_engine_id=os.getenv("GOOGLE_CUSTOM_SEARCH_ENGINE_ID"),
+        reddit_client_id=os.getenv("REDDIT_CLIENT_ID"),
+        reddit_client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
+        reddit_user_agent=os.getenv("REDDIT_USER_AGENT"),
+        demand_embedding_provider=os.getenv("DEMAND_EMBEDDING_PROVIDER", "deterministic"),
+        demand_embedding_model=os.getenv("DEMAND_EMBEDDING_MODEL", "deterministic-hash-embedding.v1"),
+        openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
     )
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    value = os.getenv(key)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

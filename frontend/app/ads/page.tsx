@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -14,9 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useTwitterAdMutations, useTwitterAds } from "@/hooks/use-twitter-ads";
+import { useI18n } from "@/hooks/use-i18n";
 import { formatCurrency } from "@/lib/utils";
 
 export default function AdsPage() {
+  const { locale, t } = useI18n();
   const ads = useTwitterAds();
   const mutations = useTwitterAdMutations();
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -25,10 +27,10 @@ export default function AdsPage() {
     if (!deleteId) return;
     try {
       await mutations.remove.mutateAsync(deleteId);
-      toast.success("Ad deleted.");
+      toast.success(t("ads.deleted"));
       setDeleteId(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Delete failed.");
+      toast.error(error instanceof Error ? error.message : t("ads.deleteFailed"));
     }
   };
 
@@ -38,13 +40,13 @@ export default function AdsPage() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="X Ads"
-        description="Register Twitter/X ads manually and keep every create, update, and delete in history."
+        title={t("ads.title")}
+        description={t("ads.description")}
         action={
           <Button asChild>
             <Link href="/ads/new">
               <Plus className="mr-2 h-4 w-4" />
-              New ad
+              {t("ads.new")}
             </Link>
           </Button>
         }
@@ -54,15 +56,15 @@ export default function AdsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Headline</TableHead>
+                <TableHead>{t("ads.table.name")}</TableHead>
+                <TableHead>{t("ads.table.headline")}</TableHead>
                 <TableHead>CTA</TableHead>
-                <TableHead>Destination</TableHead>
+                <TableHead>{t("ads.table.destination")}</TableHead>
                 <TableHead>CTR</TableHead>
                 <TableHead>CVR</TableHead>
-                <TableHead>Spend</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-28">Actions</TableHead>
+                <TableHead>{t("ads.table.spend")}</TableHead>
+                <TableHead>{t("ads.table.status")}</TableHead>
+                <TableHead className="w-28">{t("ads.table.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -79,11 +81,11 @@ export default function AdsPage() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button asChild size="icon" variant="ghost">
-                        <Link href={`/ads/${ad.id}/edit`} aria-label="Edit ad">
+                        <Link href={`/ads/${ad.id}/edit`} aria-label={t("ads.edit")}>
                           <Pencil className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => setDeleteId(ad.id)} aria-label="Delete ad">
+                      <Button size="icon" variant="ghost" onClick={() => setDeleteId(ad.id)} aria-label={t("ads.delete")}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -94,12 +96,12 @@ export default function AdsPage() {
           </Table>
         </Card>
       ) : (
-        <EmptyState title="No X ads" description="Register an ad manually to start pair-based analysis." />
+        <EmptyState title={t("ads.emptyTitle")} description={t("ads.emptyDescription")} />
       )}
       <ConfirmDialog
         open={Boolean(deleteId)}
-        title="Delete ad"
-        description="The ad will be removed, but the delete history remains available."
+        title={t("ads.delete")}
+        description={t("ads.deleteDescription")}
         isPending={mutations.remove.isPending}
         onCancel={() => setDeleteId(null)}
         onConfirm={remove}

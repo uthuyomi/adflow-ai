@@ -2,12 +2,10 @@ import type { Metadata } from "next";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { Providers } from "@/app/providers";
+import { getStaticMetadata } from "@/lib/i18n";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "AdFlow AI",
-  description: "Review-first ad and landing page improvement workflow.",
-};
+export const metadata: Metadata = getStaticMetadata("en", "default");
 
 export default function RootLayout({
   children,
