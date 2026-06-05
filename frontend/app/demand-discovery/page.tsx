@@ -35,7 +35,7 @@ const starterPromptKeys = [
 ] as const;
 
 export default function DemandDiscoveryPage() {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [insight, setInsight] = useState<DemandDiscoveryInsight | null>(null);
@@ -66,8 +66,8 @@ export default function DemandDiscoveryPage() {
 
       try {
         const result = sessionId
-          ? await sendDemandDiscoveryMessage(sessionId, trimmed, controller.signal)
-          : await createDemandDiscoverySession(trimmed, controller.signal);
+          ? await sendDemandDiscoveryMessage(sessionId, trimmed, locale, controller.signal)
+          : await createDemandDiscoverySession(trimmed, locale, controller.signal);
 
         setSessionId(result.id);
         setInsight(result.insight);
@@ -85,7 +85,7 @@ export default function DemandDiscoveryPage() {
         setIsRunning(false);
       }
     },
-    [isRunning, sessionId, t],
+    [isRunning, locale, sessionId, t],
   );
 
   const onNew = useCallback(

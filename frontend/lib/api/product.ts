@@ -2,6 +2,7 @@
 
 import { getApiBaseUrl } from "@/lib/api/client";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { Locale } from "@/lib/i18n";
 
 async function requestWithAuth<T>(path: string, init?: RequestInit): Promise<T> {
   const supabase = getSupabaseBrowserClient();
@@ -45,29 +46,29 @@ export type DemandDiscoverySession = {
   updated_at: string;
 };
 
-export async function analyzeDemandDiscovery(input: string, signal?: AbortSignal) {
+export async function analyzeDemandDiscovery(input: string, locale: Locale = "ja", signal?: AbortSignal) {
   return requestWithAuth<{ insight: DemandDiscoveryInsight; assistant_message: string }>(
     "/demand-discovery/analyze",
     {
       method: "POST",
-      body: JSON.stringify({ input }),
+      body: JSON.stringify({ input, locale }),
       signal,
     },
   );
 }
 
-export async function createDemandDiscoverySession(input: string, signal?: AbortSignal) {
+export async function createDemandDiscoverySession(input: string, locale: Locale = "ja", signal?: AbortSignal) {
   return requestWithAuth<DemandDiscoverySession>("/demand-discovery/sessions", {
     method: "POST",
-    body: JSON.stringify({ input }),
+    body: JSON.stringify({ input, locale }),
     signal,
   });
 }
 
-export async function sendDemandDiscoveryMessage(sessionId: string, input: string, signal?: AbortSignal) {
+export async function sendDemandDiscoveryMessage(sessionId: string, input: string, locale: Locale = "ja", signal?: AbortSignal) {
   return requestWithAuth<DemandDiscoverySession>(`/demand-discovery/sessions/${sessionId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ input }),
+    body: JSON.stringify({ input, locale }),
     signal,
   });
 }

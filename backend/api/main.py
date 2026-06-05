@@ -116,6 +116,7 @@ class DemandSolutionFitRequest(BaseModel):
 
 class DemandDiscoveryInputRequest(BaseModel):
     input: str = Field(min_length=1)
+    locale: Literal["ja", "en"] = "ja"
 
 
 class AdOptimizationAnalysisRunRequest(BaseModel):
@@ -260,7 +261,7 @@ def create_demand_discovery_session(
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
-        return _build_demand_discovery_service(load_settings()).create_session(user_id=user_id, input_text=request.input)
+        return _build_demand_discovery_service(load_settings()).create_session(user_id=user_id, input_text=request.input, locale=request.locale)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -284,6 +285,7 @@ def add_demand_discovery_message(
             user_id=user_id,
             session_id=session_id,
             input_text=request.input,
+            locale=request.locale,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -296,8 +298,7 @@ def analyze_demand_discovery(
 ) -> dict[str, Any]:
     try:
         service = _build_demand_discovery_service(load_settings())
-        insight = service.analyze(input_text=request.input)
-        return {"insight": insight, "assistant_message": service.assistant_message(insight)}
+        return service.analyze(input_text=request.input, locale=request.locale)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -794,7 +795,10 @@ def _build_ad_optimization_service(settings: Settings) -> AdOptimizationService:
 
 
 def _build_demand_discovery_service(settings: Settings) -> DemandDiscoveryService:
-    return DemandDiscoveryService(repository=_repository_for_settings(settings))
+    return DemandDiscoveryService(
+        repository=_repository_for_settings(settings),
+        llm_client=_build_openai_llm_client(settings),
+    )
 
 
 def _repository_for_settings(settings: Settings) -> SupabaseRepository:
@@ -916,9 +920,10 @@ def _build_llm_client(settings: Settings) -> DeterministicLLMClient | OpenAIJSON
 
 
 def _build_openai_llm_client(settings: Settings) -> OpenAIJSONClient | None:
-    if not settings.openai_model or not os.getenv("OPENAI_API_KEY"):
+    model = os.getenv("OPENAI_FAST_MODEL") or settings.openai_model
+    if not model or not os.getenv("OPENAI_API_KEY"):
         return None
-    return OpenAIJSONClient(model=settings.openai_model)
+    return OpenAIJSONClient(model=model)
 
 
 def _build_pr_client(settings: Settings) -> InMemoryPullRequestClient | GitHubPRClient:
