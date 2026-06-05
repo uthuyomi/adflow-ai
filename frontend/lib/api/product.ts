@@ -46,6 +46,59 @@ export type DemandDiscoverySession = {
   updated_at: string;
 };
 
+export type AssetImportSummary = {
+  ads?: unknown[];
+  landing_pages?: unknown[];
+  pairs?: unknown[];
+  errors?: Array<{ row?: number; message: string; input?: unknown }>;
+  summary?: {
+    ads: number;
+    landing_pages: number;
+    pairs: number;
+    errors: number;
+  };
+  landing_page?: unknown;
+  extracted?: unknown;
+  action?: string;
+  source?: string;
+};
+
+export async function importLandingPageFromUrl(payload: {
+  url: string;
+  project_id?: string | null;
+  name?: string | null;
+}) {
+  return requestWithAuth<AssetImportSummary>("/asset-import/lp-from-url", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function importAdsCsv(payload: {
+  csv_text: string;
+  project_id?: string | null;
+  auto_fetch_lps?: boolean;
+  auto_pair?: boolean;
+}) {
+  return requestWithAuth<AssetImportSummary>("/asset-import/ads-csv", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function syncXAds(payload: {
+  project_id?: string | null;
+  account_id?: string | null;
+  ads?: Array<Record<string, unknown>> | null;
+  auto_fetch_lps?: boolean;
+  auto_pair?: boolean;
+}) {
+  return requestWithAuth<AssetImportSummary>("/integrations/x-ads/sync", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function analyzeDemandDiscovery(input: string, locale: Locale = "ja", signal?: AbortSignal) {
   return requestWithAuth<{ insight: DemandDiscoveryInsight; assistant_message: string }>(
     "/demand-discovery/analyze",

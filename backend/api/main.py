@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Literal
 
+import requests
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -42,6 +43,7 @@ from backend.services.demand.demand_intelligence_service import DemandIntelligen
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
 from backend.services.product.ad_optimization_service import AdOptimizationService
+from backend.services.product.asset_import_service import AssetImportService
 from backend.services.product.demand_discovery_service import DemandDiscoveryService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
@@ -123,6 +125,27 @@ class AdOptimizationAnalysisRunRequest(BaseModel):
     pair_id: str | None = None
     ai_mode: Literal["multi_provider", "openai_only"] = "openai_only"
     locale: Literal["ja", "en"] = "ja"
+
+
+class ImportLandingPageRequest(BaseModel):
+    url: str
+    project_id: str | None = None
+    name: str | None = None
+
+
+class ImportAdsCsvRequest(BaseModel):
+    csv_text: str = Field(min_length=1)
+    project_id: str | None = None
+    auto_fetch_lps: bool = True
+    auto_pair: bool = True
+
+
+class SyncXAdsRequest(BaseModel):
+    project_id: str | None = None
+    account_id: str | None = None
+    ads: list[dict[str, Any]] | None = None
+    auto_fetch_lps: bool = True
+    auto_pair: bool = True
 
 
 class OutcomeCreateRequest(BaseModel):
@@ -301,6 +324,62 @@ def analyze_demand_discovery(
         return service.analyze(input_text=request.input, locale=request.locale)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/asset-import/lp-from-url")
+def import_landing_page_from_url(
+    request: ImportLandingPageRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_asset_import_service(load_settings()).import_lp_from_url(
+            user_id=user_id,
+            url=request.url,
+            project_id=request.project_id,
+            name=request.name,
+        )
+    except requests.HTTPError as exc:
+        raise HTTPException(status_code=400, detail=f"Landing page fetch failed: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/asset-import/ads-csv")
+def import_ads_csv(
+    request: ImportAdsCsvRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_asset_import_service(load_settings()).import_ads_csv(
+            user_id=user_id,
+            csv_text=request.csv_text,
+            project_id=request.project_id,
+            auto_fetch_lps=request.auto_fetch_lps,
+            auto_pair=request.auto_pair,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/sync")
+def sync_x_ads(
+    request: SyncXAdsRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_asset_import_service(load_settings()).sync_x_ads(
+            user_id=user_id,
+            project_id=request.project_id,
+            account_id=request.account_id,
+            ads=request.ads,
+            auto_fetch_lps=request.auto_fetch_lps,
+            auto_pair=request.auto_pair,
+        )
+    except requests.HTTPError as exc:
+        raise HTTPException(status_code=400, detail=f"X Ads API request failed: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 
 @app.post("/workflow/run", response_model=AdFlowWorkflowResult)
 def run_workflow(
@@ -799,6 +878,10 @@ def _build_demand_discovery_service(settings: Settings) -> DemandDiscoveryServic
         repository=_repository_for_settings(settings),
         llm_client=_build_openai_llm_client(settings),
     )
+
+
+def _build_asset_import_service(settings: Settings) -> AssetImportService:
+    return AssetImportService(repository=_repository_for_settings(settings), settings=settings)
 
 
 def _repository_for_settings(settings: Settings) -> SupabaseRepository:
