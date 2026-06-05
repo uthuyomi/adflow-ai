@@ -12,11 +12,9 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { Bot, Copy, Lightbulb, Loader2, Plus, Send, Sparkles, Square, UserRound } from "lucide-react";
+import { Bot, Copy, HelpCircle, Loader2, PanelRight, Plus, Send, Sparkles, Square, UserRound, X } from "lucide-react";
 
-import { SectionHeader } from "@/components/shared/SectionHeader";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useI18n } from "@/hooks/use-i18n";
 import {
   createDemandDiscoverySession,
@@ -43,6 +41,8 @@ export default function DemandDiscoveryPage() {
   const [insight, setInsight] = useState<DemandDiscoveryInsight | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHints, setShowHints] = useState(false);
+  const [showInsights, setShowInsights] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const sendText = useCallback(
@@ -57,6 +57,7 @@ export default function DemandDiscoveryPage() {
       };
 
       setError(null);
+      setShowHints(false);
       setIsRunning(true);
       setMessages((current) => [...current, userMessage]);
 
@@ -127,101 +128,102 @@ export default function DemandDiscoveryPage() {
     setMessages([]);
     setInsight(null);
     setError(null);
+    setShowHints(false);
+    setShowInsights(false);
     setIsRunning(false);
   };
 
   return (
-    <div className="space-y-6">
-      <SectionHeader
-        title={t("demandDiscovery.title")}
-        description={t("demandDiscovery.description")}
-        action={
-          <Button onClick={resetChat} variant="outline">
+    <div className="relative -m-6 flex min-h-[calc(100vh-4rem)] flex-col bg-background">
+      <div className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/70 bg-background/90 px-4 backdrop-blur">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+            <Sparkles className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold">{t("demandDiscovery.title")}</h1>
+            <p className="truncate text-xs text-muted-foreground">{t("demandDiscovery.chatSubtitle")}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={resetChat} size="sm" variant="ghost">
             <Plus className="mr-2 h-4 w-4" />
             {t("demandDiscovery.newChat")}
           </Button>
-        }
-      />
-
-      <div className="grid min-h-[calc(100vh-12rem)] gap-6 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
-        <PromptPanel disabled={isRunning} onPrompt={sendText} />
-
-        <Card className="overflow-hidden">
-          <AssistantRuntimeProvider runtime={runtime}>
-            <AssistantThread error={error} isRunning={isRunning} />
-          </AssistantRuntimeProvider>
-        </Card>
-
-        <InsightPanel insight={insight} />
+          <Button onClick={() => setShowInsights((current) => !current)} size="icon" variant="ghost" aria-label={t("demandDiscovery.insightPanel")}>
+            <PanelRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
+
+      <AssistantRuntimeProvider runtime={runtime}>
+        <AssistantThread
+          error={error}
+          insight={insight}
+          isRunning={isRunning}
+          onPrompt={sendText}
+          onToggleHints={() => setShowHints((current) => !current)}
+          showHints={showHints}
+        />
+      </AssistantRuntimeProvider>
+
+      {showInsights ? <InsightDrawer insight={insight} onClose={() => setShowInsights(false)} /> : null}
     </div>
   );
 }
 
-function PromptPanel({ disabled, onPrompt }: { disabled: boolean; onPrompt: (prompt: string) => void }) {
+function AssistantThread({
+  error,
+  insight,
+  isRunning,
+  onPrompt,
+  onToggleHints,
+  showHints,
+}: {
+  error: string | null;
+  insight: DemandDiscoveryInsight | null;
+  isRunning: boolean;
+  onPrompt: (prompt: string) => void;
+  onToggleHints: () => void;
+  showHints: boolean;
+}) {
   const { t } = useI18n();
 
   return (
-    <Card className="h-fit">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Lightbulb className="h-4 w-4" />
-          {t("demandDiscovery.starters")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {starterPromptKeys.map((key) => {
-          const prompt = t(key);
-          return (
-            <button
-              className="w-full rounded-md border border-border p-3 text-left text-sm leading-6 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={disabled}
-              key={key}
-              onClick={() => onPrompt(prompt)}
-              type="button"
-            >
-              {prompt}
-            </button>
-          );
-        })}
-      </CardContent>
-    </Card>
-  );
-}
-
-function AssistantThread({ error, isRunning }: { error: string | null; isRunning: boolean }) {
-  const { t } = useI18n();
-
-  return (
-    <ThreadPrimitive.Root className="flex h-full min-h-[680px] flex-col bg-background">
-      <ThreadPrimitive.Viewport className="flex flex-1 flex-col overflow-y-auto">
+    <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
+      <ThreadPrimitive.Viewport className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <ThreadPrimitive.Empty>
-          <div className="mx-auto flex max-w-2xl flex-1 flex-col items-center justify-center px-6 py-16 text-center">
-            <div className="rounded-md bg-primary/10 p-3 text-primary">
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center px-4 pb-20 pt-12 text-center">
+            <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-foreground text-background">
               <Sparkles className="h-6 w-6" />
             </div>
-            <h2 className="mt-5 text-2xl font-semibold">{t("demandDiscovery.welcomeTitle")}</h2>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{t("demandDiscovery.welcomeBody")}</p>
+            <h2 className="text-3xl font-semibold tracking-normal">{t("demandDiscovery.welcomeTitle")}</h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{t("demandDiscovery.welcomeBody")}</p>
           </div>
         </ThreadPrimitive.Empty>
 
-        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 pb-32 pt-6">
           <ThreadPrimitive.Messages>{() => <ThreadMessage />}</ThreadPrimitive.Messages>
           {isRunning ? (
-            <div className="flex items-center gap-2 self-start rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 px-1 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
               {t("demandDiscovery.thinking")}
             </div>
           ) : null}
           {error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           ) : null}
+          {insight ? <CompactInsight insight={insight} /> : null}
         </div>
 
-        <ThreadPrimitive.ViewportFooter className="sticky bottom-0 border-t border-border bg-background/95 px-4 py-4 backdrop-blur">
-          <Composer />
+        <ThreadPrimitive.ViewportFooter className="sticky bottom-0 z-10 bg-background px-3 pb-4 pt-2">
+          <div className="mx-auto w-full max-w-3xl">
+            {showHints ? <PromptExamples disabled={isRunning} onPrompt={onPrompt} onClose={onToggleHints} /> : null}
+            <Composer isRunning={isRunning} onToggleHints={onToggleHints} />
+            <p className="mt-2 text-center text-xs text-muted-foreground">{t("demandDiscovery.footerNote")}</p>
+          </div>
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>
@@ -233,31 +235,33 @@ function ThreadMessage() {
   const isUser = role === "user";
 
   return (
-    <MessagePrimitive.Root className={cn("group flex w-full gap-3", isUser && "justify-end")}>
+    <MessagePrimitive.Root className={cn("group flex w-full gap-4", isUser && "justify-end")}>
       {!isUser ? (
-        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
           <Bot className="h-4 w-4" />
         </div>
       ) : null}
-      <div className={cn("max-w-[82%] space-y-2", isUser && "flex flex-col items-end")}>
+      <div className={cn("max-w-[88%] space-y-2", isUser && "flex flex-col items-end")}>
         <div
           className={cn(
-            "rounded-2xl px-4 py-3 text-sm leading-6",
-            isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+            "text-sm leading-7",
+            isUser
+              ? "rounded-3xl bg-muted px-4 py-2 text-foreground"
+              : "min-h-8 px-0 py-1 text-foreground",
           )}
         >
           <MessagePrimitive.Parts />
         </div>
-        <ActionBarPrimitive.Root className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <ActionBarPrimitive.Root className={cn("flex gap-1 opacity-0 transition-opacity group-hover:opacity-100", isUser && "justify-end")}>
           <ActionBarPrimitive.Copy asChild>
-            <button className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" type="button">
+            <button className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground" type="button" aria-label="Copy">
               <Copy className="h-3.5 w-3.5" />
             </button>
           </ActionBarPrimitive.Copy>
         </ActionBarPrimitive.Root>
       </div>
       {isUser ? (
-        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <UserRound className="h-4 w-4" />
         </div>
       ) : null}
@@ -265,42 +269,112 @@ function ThreadMessage() {
   );
 }
 
-function Composer() {
+function Composer({ isRunning, onToggleHints }: { isRunning: boolean; onToggleHints: () => void }) {
   const { t } = useI18n();
 
   return (
-    <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-2xl border border-border bg-card p-2 shadow-sm">
+    <ComposerPrimitive.Root className="flex w-full items-end gap-2 rounded-[28px] border border-border bg-card p-2 shadow-[0_8px_30px_rgba(0,0,0,0.08)]">
+      <button
+        className="mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        onClick={onToggleHints}
+        type="button"
+        aria-label={t("demandDiscovery.showPromptExamples")}
+      >
+        <HelpCircle className="h-5 w-5" />
+      </button>
       <ComposerPrimitive.Input
-        className="max-h-48 min-h-12 flex-1 resize-none bg-transparent px-3 py-3 text-sm outline-none placeholder:text-muted-foreground"
+        className="max-h-52 min-h-11 flex-1 resize-none bg-transparent px-1 py-3 text-sm leading-6 outline-none placeholder:text-muted-foreground"
         placeholder={t("demandDiscovery.placeholder")}
         submitMode="enter"
       />
-      <ComposerPrimitive.Cancel asChild>
-        <Button aria-label={t("demandDiscovery.stop")} size="icon" type="button" variant="outline">
-          <Square className="h-4 w-4" />
-        </Button>
-      </ComposerPrimitive.Cancel>
-      <ComposerPrimitive.Send asChild>
-        <Button aria-label={t("common.send")} size="icon" type="submit">
-          <Send className="h-4 w-4" />
-        </Button>
-      </ComposerPrimitive.Send>
+      {isRunning ? (
+        <ComposerPrimitive.Cancel asChild>
+          <Button aria-label={t("demandDiscovery.stop")} className="mb-0.5 rounded-full" size="icon" type="button" variant="outline">
+            <Square className="h-4 w-4" />
+          </Button>
+        </ComposerPrimitive.Cancel>
+      ) : (
+        <ComposerPrimitive.Send asChild>
+          <Button aria-label={t("common.send")} className="mb-0.5 rounded-full" size="icon" type="submit">
+            <Send className="h-4 w-4" />
+          </Button>
+        </ComposerPrimitive.Send>
+      )}
     </ComposerPrimitive.Root>
   );
 }
 
-function InsightPanel({ insight }: { insight: DemandDiscoveryInsight | null }) {
+function PromptExamples({
+  disabled,
+  onClose,
+  onPrompt,
+}: {
+  disabled: boolean;
+  onClose: () => void;
+  onPrompt: (prompt: string) => void;
+}) {
   const { t } = useI18n();
 
   return (
-    <Card className="h-fit">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+    <div className="mb-3 rounded-2xl border border-border bg-card p-3 shadow-lg">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <HelpCircle className="h-4 w-4" />
+          {t("demandDiscovery.promptExamples")}
+        </div>
+        <button className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" onClick={onClose} type="button" aria-label={t("common.closeNavigation")}>
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid gap-2 md:grid-cols-3">
+        {starterPromptKeys.map((key) => {
+          const prompt = t(key);
+          return (
+            <button
+              className="rounded-xl border border-border bg-background p-3 text-left text-xs leading-5 transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={disabled}
+              key={key}
+              onClick={() => onPrompt(prompt)}
+              type="button"
+            >
+              {prompt}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CompactInsight({ insight }: { insight: DemandDiscoveryInsight }) {
+  const { t } = useI18n();
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 text-sm">
+      <div className="mb-2 flex items-center gap-2 font-medium">
+        <Sparkles className="h-4 w-4" />
+        {t("demandDiscovery.insightPanel")}
+      </div>
+      <p className="leading-6 text-muted-foreground">{insight.summary}</p>
+    </div>
+  );
+}
+
+function InsightDrawer({ insight, onClose }: { insight: DemandDiscoveryInsight | null; onClose: () => void }) {
+  const { t } = useI18n();
+
+  return (
+    <div className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-border bg-background shadow-2xl">
+      <div className="flex h-14 items-center justify-between border-b border-border px-4">
+        <div className="flex items-center gap-2 font-semibold">
           <Sparkles className="h-4 w-4" />
           {t("demandDiscovery.insightPanel")}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
+        </div>
+        <button className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" onClick={onClose} type="button" aria-label={t("common.closeNavigation")}>
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
         {!insight ? (
           <p className="text-sm leading-6 text-muted-foreground">{t("demandDiscovery.insightEmpty")}</p>
         ) : (
@@ -314,8 +388,8 @@ function InsightPanel({ insight }: { insight: DemandDiscoveryInsight | null }) {
             <InsightSection title={t("demandDiscovery.nextActions")} items={insight.nextActions} />
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -325,7 +399,7 @@ function InsightSection({ items, title }: { items: string[]; title: string }) {
       <h3 className="text-sm font-semibold">{title}</h3>
       <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
         {items.map((item, index) => (
-          <li className="rounded-md bg-muted px-3 py-2 leading-6" key={`${title}-${index}`}>
+          <li className="rounded-xl bg-muted px-3 py-2 leading-6" key={`${title}-${index}`}>
             {item}
           </li>
         ))}
