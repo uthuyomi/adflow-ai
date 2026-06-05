@@ -2,7 +2,7 @@ app = "adflow-ai-api"
 primary_region = "nrt"
 
 [build]
-  dockerfile = "backend/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
   PORT = "8080"
