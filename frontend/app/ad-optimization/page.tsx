@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
+import { useI18n } from "@/hooks/use-i18n";
 import { useOutcomesDashboard } from "@/hooks/useAdflowData";
 import { useLandingPages } from "@/hooks/use-landing-pages";
 import { useProjects } from "@/hooks/use-projects";
@@ -19,6 +20,7 @@ import { useTwitterAds } from "@/hooks/use-twitter-ads";
 import type { AdProject } from "@/lib/types/adflow";
 
 export default function AdOptimizationPage() {
+  const { t } = useI18n();
   const projects = useProjects();
   const ads = useTwitterAds();
   const lps = useLandingPages();
@@ -40,36 +42,34 @@ export default function AdOptimizationPage() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Ad Optimization"
-        description="広告とLPをセットで改善し、分析、提案、実装タスク、結果記録までを管理します。"
+        title={t("adOptimization.title")}
+        description={t("adOptimization.description")}
         action={
           <Button asChild>
             <Link href="/projects">
               <Plus className="mr-2 h-4 w-4" />
-              Create Project
+              {t("adOptimization.createProject")}
             </Link>
           </Button>
         }
       />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="Projects" value={projectList.length} />
-        <MetricCard label="Ads" value={adList.length} />
-        <MetricCard label="Landing Pages" value={lpList.length} />
-        <MetricCard label="Analysis Targets" value={pairList.length} />
+        <MetricCard label={t("adOptimization.projects")} value={projectList.length} />
+        <MetricCard label={t("adOptimization.ads")} value={adList.length} />
+        <MetricCard label={t("adOptimization.landingPages")} value={lpList.length} />
+        <MetricCard label={t("adOptimization.analysisTargets")} value={pairList.length} />
       </div>
 
       <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <div>
-              <CardTitle>Projects</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Project単位で広告、LP、分析、提案、結果をまとめます。
-              </p>
+              <CardTitle>{t("adOptimization.projects")}</CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">{t("adOptimization.projectListDescription")}</p>
             </div>
             <Button asChild variant="outline">
-              <Link href="/projects">Manage</Link>
+              <Link href="/projects">{t("adOptimization.manage")}</Link>
             </Button>
           </CardHeader>
           <CardContent>
@@ -78,6 +78,13 @@ export default function AdOptimizationPage() {
                 {projectList.slice(0, 6).map((project) => (
                   <ProjectRow
                     ads={adList.filter((ad) => ad.project_id === project.id).length}
+                    labels={{
+                      ads: t("adOptimization.adsShort"),
+                      lps: t("adOptimization.lpsShort"),
+                      noDescription: t("adOptimization.noDescription"),
+                      results: t("adOptimization.resultsShort"),
+                      targets: t("adOptimization.targetsShort"),
+                    }}
                     lps={lpList.filter((lp) => lp.project_id === project.id).length}
                     outcomes={outcomeList.filter((outcome) => outcome.project_id === project.id).length}
                     pairs={pairList.filter((pair) => pair.project_id === project.id).length}
@@ -88,13 +95,10 @@ export default function AdOptimizationPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                <EmptyState
-                  title="まだ広告改善プロジェクトがありません"
-                  description="最初のプロジェクトを作成し、広告とLPを登録して分析を始めましょう。"
-                />
+                <EmptyState title={t("adOptimization.emptyTitle")} description={t("adOptimization.emptyDescription")} />
                 <div className="flex justify-center">
                   <Button asChild>
-                    <Link href="/projects">Create Project</Link>
+                    <Link href="/projects">{t("adOptimization.createProject")}</Link>
                   </Button>
                 </div>
               </div>
@@ -104,48 +108,45 @@ export default function AdOptimizationPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Getting Started</CardTitle>
+            <CardTitle>{t("adOptimization.gettingStarted")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Step done={projectList.length > 0} label="Create a project" href="/projects" />
-            <Step done={adList.length > 0} label="Register an ad" href="/ads/new" />
-            <Step done={lpList.length > 0} label="Register a landing page" href="/lps/new" />
-            <Step done={pairList.length > 0} label="Create an analysis target" href="/pairs/new" />
-            <Step done={pairList.some((pair) => pair.last_analyzed_at)} label="Run analysis" href="/pairs" />
+            <Step done={projectList.length > 0} label={t("adOptimization.stepProject")} href="/projects" />
+            <Step done={adList.length > 0} label={t("adOptimization.stepAd")} href="/ads/new" />
+            <Step done={lpList.length > 0} label={t("adOptimization.stepLp")} href="/lps/new" />
+            <Step done={pairList.length > 0} label={t("adOptimization.stepTarget")} href="/pairs/new" />
+            <Step done={pairList.some((pair) => pair.last_analyzed_at)} label={t("adOptimization.stepAnalysis")} href="/pairs" />
           </CardContent>
         </Card>
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
         <QuickLink
-          description="広告とLPの素材を登録、編集、削除します。"
-          href="/ad-optimization"
+          description={t("adOptimization.assetsDescription")}
           icon={<Layers3 className="h-5 w-5" />}
           links={[
-            { href: "/ads", label: "Ads" },
-            { href: "/lps", label: "Landing Pages" },
+            { href: "/ads", label: t("adOptimization.ads") },
+            { href: "/lps", label: t("adOptimization.landingPages") },
           ]}
-          title="Assets"
+          title={t("adOptimization.assets")}
         />
         <QuickLink
-          description="広告とLPの組み合わせを分析し、改善提案を作ります。"
-          href="/pairs"
+          description={t("adOptimization.analysisDescription")}
           icon={<Target className="h-5 w-5" />}
           links={[
-            { href: "/pairs", label: "Analysis Targets" },
-            { href: "/improvements", label: "Recommendations" },
+            { href: "/pairs", label: t("adOptimization.analysisTargets") },
+            { href: "/improvements", label: t("adOptimization.recommendations") },
           ]}
-          title="Analysis"
+          title={t("adOptimization.analysis")}
         />
         <QuickLink
-          description="実装後の成果と履歴を確認します。"
-          href="/results"
+          description={t("adOptimization.resultsDescription")}
           icon={<BarChart3 className="h-5 w-5" />}
           links={[
-            { href: "/results", label: "Results" },
-            { href: "/history", label: "Activity" },
+            { href: "/results", label: t("nav.results") },
+            { href: "/history", label: t("adOptimization.activity") },
           ]}
-          title="Results"
+          title={t("nav.results")}
         />
       </section>
     </div>
@@ -167,12 +168,20 @@ function ProjectRow({
   lps,
   pairs,
   outcomes,
+  labels,
 }: {
   project: AdProject;
   ads: number;
   lps: number;
   pairs: number;
   outcomes: number;
+  labels: {
+    noDescription: string;
+    ads: string;
+    lps: string;
+    targets: string;
+    results: string;
+  };
 }) {
   return (
     <Link
@@ -181,13 +190,21 @@ function ProjectRow({
     >
       <div>
         <div className="font-medium">{project.name}</div>
-        <div className="mt-1 text-sm text-muted-foreground">{project.description || "No description"}</div>
+        <div className="mt-1 text-sm text-muted-foreground">{project.description || labels.noDescription}</div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Badge variant="secondary">{ads} ads</Badge>
-        <Badge variant="secondary">{lps} LPs</Badge>
-        <Badge variant="secondary">{pairs} targets</Badge>
-        <Badge variant="outline">{outcomes} results</Badge>
+        <Badge variant="secondary">
+          {ads} {labels.ads}
+        </Badge>
+        <Badge variant="secondary">
+          {lps} {labels.lps}
+        </Badge>
+        <Badge variant="secondary">
+          {pairs} {labels.targets}
+        </Badge>
+        <Badge variant="outline">
+          {outcomes} {labels.results}
+        </Badge>
       </div>
     </Link>
   );
@@ -212,7 +229,6 @@ function QuickLink({
   title,
 }: {
   description: string;
-  href: string;
   icon: ReactNode;
   links: Array<{ href: string; label: string }>;
   title: string;

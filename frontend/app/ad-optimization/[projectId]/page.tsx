@@ -14,13 +14,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
-import { useOutcomesDashboard } from "@/hooks/useAdflowData";
 import { useChangeHistory } from "@/hooks/use-change-history";
+import { useI18n } from "@/hooks/use-i18n";
 import { useLandingPages } from "@/hooks/use-landing-pages";
 import { useProject } from "@/hooks/use-projects";
 import { useTwitterAds } from "@/hooks/use-twitter-ads";
+import { useOutcomesDashboard } from "@/hooks/useAdflowData";
 
 export default function AdOptimizationProjectPage() {
+  const { t } = useI18n();
   const params = useParams<{ projectId: string }>();
   const project = useProject(params.projectId);
   const ads = useTwitterAds();
@@ -46,19 +48,19 @@ export default function AdOptimizationProjectPage() {
     <div className="space-y-6">
       <SectionHeader
         title={project.data.name}
-        description={project.data.description || "広告、LP、分析、提案、結果をこのプロジェクトで管理します。"}
+        description={project.data.description || t("adOptimization.projectDetailFallback")}
         action={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
               <Link href="/ads/new">
                 <Plus className="mr-2 h-4 w-4" />
-                Add Ad
+                {t("adOptimization.addAd")}
               </Link>
             </Button>
             <Button asChild>
               <Link href="/pairs/new">
                 <Play className="mr-2 h-4 w-4" />
-                New Analysis
+                {t("adOptimization.newAnalysis")}
               </Link>
             </Button>
           </div>
@@ -66,35 +68,35 @@ export default function AdOptimizationProjectPage() {
       />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Ads" value={projectAds.length} />
-        <Metric label="Landing Pages" value={projectLps.length} />
-        <Metric label="Analysis Targets" value={projectPairs.length} />
-        <Metric label="Recorded Results" value={projectOutcomes.length} />
+        <Metric label={t("adOptimization.ads")} value={projectAds.length} />
+        <Metric label={t("adOptimization.landingPages")} value={projectLps.length} />
+        <Metric label={t("adOptimization.analysisTargets")} value={projectPairs.length} />
+        <Metric label={t("adOptimization.recordedResults")} value={projectOutcomes.length} />
       </div>
 
       <Tabs defaultValue="overview">
         <TabsList className="flex flex-wrap">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="assets">Assets</TabsTrigger>
-          <TabsTrigger value="analysis">Analysis</TabsTrigger>
-          <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
-          <TabsTrigger value="results">Results</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="overview">{t("adOptimization.tabOverview")}</TabsTrigger>
+          <TabsTrigger value="assets">{t("adOptimization.tabAssets")}</TabsTrigger>
+          <TabsTrigger value="analysis">{t("adOptimization.tabAnalysis")}</TabsTrigger>
+          <TabsTrigger value="recommendations">{t("adOptimization.tabRecommendations")}</TabsTrigger>
+          <TabsTrigger value="results">{t("adOptimization.tabResults")}</TabsTrigger>
+          <TabsTrigger value="activity">{t("adOptimization.tabActivity")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Next Recommended Action</CardTitle>
+              <CardTitle>{t("adOptimization.nextAction")}</CardTitle>
             </CardHeader>
             <CardContent>
               <NextAction ads={projectAds.length} analyzed={analyzedCount} lps={projectLps.length} pairs={projectPairs.length} />
             </CardContent>
           </Card>
           <div className="grid gap-4 md:grid-cols-3">
-            <SummaryCard icon={<Megaphone className="h-5 w-5" />} label="Registered ads" value={projectAds.length} />
-            <SummaryCard icon={<FileText className="h-5 w-5" />} label="Registered LPs" value={projectLps.length} />
-            <SummaryCard icon={<Sparkles className="h-5 w-5" />} label="Latest results" value={projectOutcomes.length} />
+            <SummaryCard icon={<Megaphone className="h-5 w-5" />} label={t("adOptimization.registeredAds")} value={projectAds.length} />
+            <SummaryCard icon={<FileText className="h-5 w-5" />} label={t("adOptimization.registeredLps")} value={projectLps.length} />
+            <SummaryCard icon={<Sparkles className="h-5 w-5" />} label={t("adOptimization.latestResults")} value={projectOutcomes.length} />
           </div>
         </TabsContent>
 
@@ -102,27 +104,27 @@ export default function AdOptimizationProjectPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <AssetList
               emptyAction="/ads/new"
-              emptyLabel="Add Ad"
-              emptyText="広告を登録すると、このプロジェクトの分析対象にできます。"
+              emptyLabel={t("adOptimization.addAd")}
+              emptyText={t("adOptimization.emptyAds")}
               items={projectAds.map((ad) => ({
                 href: `/ads/${ad.id}/edit`,
                 title: ad.name,
                 meta: ad.headline || ad.destination_url,
                 badge: ad.status,
               }))}
-              title="Ads"
+              title={t("adOptimization.ads")}
             />
             <AssetList
               emptyAction="/lps/new"
-              emptyLabel="Add LP"
-              emptyText="LPを登録すると、広告との整合性を分析できます。"
+              emptyLabel={t("adOptimization.addLp")}
+              emptyText={t("adOptimization.emptyLps")}
               items={projectLps.map((lp) => ({
                 href: `/lps/${lp.id}/edit`,
                 title: lp.name,
                 meta: lp.hero_title || lp.url,
-                badge: lp.primary_cta || "No CTA",
+                badge: lp.primary_cta || t("adOptimization.noCta"),
               }))}
-              title="Landing Pages"
+              title={t("adOptimization.landingPages")}
             />
           </div>
         </TabsContent>
@@ -136,11 +138,11 @@ export default function AdOptimizationProjectPage() {
                     <div>
                       <div className="font-medium">{pair.name}</div>
                       <div className="mt-1 text-sm text-muted-foreground">
-                        {pair.twitter_ads?.name || "Ad"} / {pair.landing_pages?.name || "Landing Page"}
+                        {pair.twitter_ads?.name || t("adOptimization.ad")} / {pair.landing_pages?.name || t("adOptimization.landingPage")}
                       </div>
                     </div>
                     <Badge variant={pair.last_analyzed_at ? "secondary" : "outline"}>
-                      {pair.last_analyzed_at ? "Analyzed" : "Not analyzed"}
+                      {pair.last_analyzed_at ? t("adOptimization.analyzed") : t("adOptimization.notAnalyzed")}
                     </Badge>
                   </div>
                 </Link>
@@ -148,13 +150,10 @@ export default function AdOptimizationProjectPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <EmptyState
-                title="No analysis target"
-                description="広告とLPの組み合わせを作成すると、整合性分析を実行できます。"
-              />
+              <EmptyState title={t("adOptimization.noAnalysisTarget")} description={t("adOptimization.noAnalysisTargetDescription")} />
               <div className="flex justify-center">
                 <Button asChild>
-                  <Link href="/pairs/new">Create Analysis Target</Link>
+                  <Link href="/pairs/new">{t("adOptimization.createAnalysisTarget")}</Link>
                 </Button>
               </div>
             </div>
@@ -165,13 +164,11 @@ export default function AdOptimizationProjectPage() {
           <Card className="p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="font-semibold">Recommendations</div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  分析から生成された改善提案は、ここではユーザー向けに Recommendations として扱います。
-                </p>
+                <div className="font-semibold">{t("adOptimization.recommendations")}</div>
+                <p className="mt-1 text-sm text-muted-foreground">{t("adOptimization.recommendationsDescription")}</p>
               </div>
               <Button asChild variant="outline">
-                <Link href="/improvements">Open Recommendations</Link>
+                <Link href="/improvements">{t("adOptimization.openRecommendations")}</Link>
               </Button>
             </div>
           </Card>
@@ -185,7 +182,7 @@ export default function AdOptimizationProjectPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="font-medium">{outcome.title}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{outcome.outcome_summary || outcome.description || "No summary"}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{outcome.outcome_summary || outcome.description || t("adOptimization.noSummary")}</div>
                     </div>
                     <Badge>{outcome.outcome_status}</Badge>
                   </div>
@@ -193,7 +190,7 @@ export default function AdOptimizationProjectPage() {
               ))}
             </div>
           ) : (
-            <EmptyState title="No results" description="改善を実装したら、before / after metrics を記録します。" />
+            <EmptyState title={t("adOptimization.noResults")} description={t("adOptimization.noResultsDescription")} />
           )}
         </TabsContent>
 
@@ -213,7 +210,7 @@ export default function AdOptimizationProjectPage() {
               ))}
             </div>
           ) : (
-            <EmptyState title="No activity" description="変更、分析、判断、結果記録がここに表示されます。" />
+            <EmptyState title={t("adOptimization.noActivity")} description={t("adOptimization.noActivityDescription")} />
           )}
         </TabsContent>
       </Tabs>
@@ -231,11 +228,13 @@ function Metric({ label, value }: { label: string; value: number }) {
 }
 
 function NextAction({ ads, analyzed, lps, pairs }: { ads: number; analyzed: number; lps: number; pairs: number }) {
-  if (!ads) return <ActionText href="/ads/new" label="Add Ad" text="まず広告を登録してください。" />;
-  if (!lps) return <ActionText href="/lps/new" label="Add LP" text="次にLPを登録してください。" />;
-  if (!pairs) return <ActionText href="/pairs/new" label="Create Analysis Target" text="広告とLPの組み合わせを作成してください。" />;
-  if (!analyzed) return <ActionText href="/pairs" label="Run Analysis" text="作成済みの分析対象で分析を実行してください。" />;
-  return <ActionText href="/results" label="Review Results" text="改善提案と結果を確認してください。" />;
+  const { t } = useI18n();
+
+  if (!ads) return <ActionText href="/ads/new" label={t("adOptimization.addAd")} text={t("adOptimization.nextAddAd")} />;
+  if (!lps) return <ActionText href="/lps/new" label={t("adOptimization.addLp")} text={t("adOptimization.nextAddLp")} />;
+  if (!pairs) return <ActionText href="/pairs/new" label={t("adOptimization.createAnalysisTarget")} text={t("adOptimization.nextCreateTarget")} />;
+  if (!analyzed) return <ActionText href="/pairs" label={t("adOptimization.runAnalysis")} text={t("adOptimization.nextRunAnalysis")} />;
+  return <ActionText href="/results" label={t("adOptimization.reviewResults")} text={t("adOptimization.nextReviewResults")} />;
 }
 
 function ActionText({ href, label, text }: { href: string; label: string; text: string }) {
@@ -276,6 +275,8 @@ function AssetList({
   items: Array<{ href: string; title: string; meta: string; badge: string }>;
   title: string;
 }) {
+  const { t } = useI18n();
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -301,10 +302,7 @@ function AssetList({
           </div>
         ) : (
           <div className="space-y-4">
-            <EmptyState
-              title={`No ${title}`}
-              description={emptyText}
-            />
+            <EmptyState title={`${t("adOptimization.no")} ${title}`} description={emptyText} />
             <div className="flex justify-center">
               <Button asChild>
                 <Link href={emptyAction}>{emptyLabel}</Link>

@@ -45,26 +45,29 @@ export type DemandDiscoverySession = {
   updated_at: string;
 };
 
-export async function analyzeDemandDiscovery(input: string) {
+export async function analyzeDemandDiscovery(input: string, signal?: AbortSignal) {
   return requestWithAuth<{ insight: DemandDiscoveryInsight; assistant_message: string }>(
     "/demand-discovery/analyze",
     {
       method: "POST",
       body: JSON.stringify({ input }),
+      signal,
     },
   );
 }
 
-export async function createDemandDiscoverySession(input: string) {
+export async function createDemandDiscoverySession(input: string, signal?: AbortSignal) {
   return requestWithAuth<DemandDiscoverySession>("/demand-discovery/sessions", {
     method: "POST",
     body: JSON.stringify({ input }),
+    signal,
   });
 }
 
-export async function sendDemandDiscoveryMessage(sessionId: string, input: string) {
+export async function sendDemandDiscoveryMessage(sessionId: string, input: string, signal?: AbortSignal) {
   return requestWithAuth<DemandDiscoverySession>(`/demand-discovery/sessions/${sessionId}/messages`, {
     method: "POST",
     body: JSON.stringify({ input }),
+    signal,
   });
 }

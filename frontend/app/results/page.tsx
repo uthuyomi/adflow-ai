@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
-import { useDemandIntelligenceDashboard, useOutcomesDashboard } from "@/hooks/useAdflowData";
 import { useChangeHistory } from "@/hooks/use-change-history";
+import { useI18n } from "@/hooks/use-i18n";
+import { useDemandIntelligenceDashboard, useOutcomesDashboard } from "@/hooks/useAdflowData";
 import { usePrs } from "@/hooks/usePrs";
 
 export default function ResultsPage() {
+  const { t } = useI18n();
   const pairs = useAdLpPairs();
   const demand = useDemandIntelligenceDashboard();
   const outcomes = useOutcomesDashboard();
@@ -36,24 +38,21 @@ export default function ResultsPage() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader
-        title="Results"
-        description="Ad Optimization と Demand Discovery の結果、実装状態、活動履歴を横断して確認します。"
-      />
+      <SectionHeader title={t("results.title")} description={t("results.description")} />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Analyzed targets" value={analyzedPairs.length} />
-        <Metric label="Discovery runs" value={demandRuns.length} />
-        <Metric label="Recorded results" value={outcomeList.length} />
-        <Metric label="Implementation items" value={prList.length} />
+        <Metric label={t("results.analyzedTargets")} value={analyzedPairs.length} />
+        <Metric label={t("results.discoveryRuns")} value={demandRuns.length} />
+        <Metric label={t("results.recordedResults")} value={outcomeList.length} />
+        <Metric label={t("results.implementationItems")} value={prList.length} />
       </div>
 
       <Tabs defaultValue="ad-results">
         <TabsList className="flex flex-wrap">
-          <TabsTrigger value="ad-results">Ad Optimization Results</TabsTrigger>
-          <TabsTrigger value="demand-results">Demand Discovery Results</TabsTrigger>
-          <TabsTrigger value="implementation">Implementation Results</TabsTrigger>
-          <TabsTrigger value="activity">Activity History</TabsTrigger>
+          <TabsTrigger value="ad-results">{t("results.adResults")}</TabsTrigger>
+          <TabsTrigger value="demand-results">{t("results.demandResults")}</TabsTrigger>
+          <TabsTrigger value="implementation">{t("results.implementationResults")}</TabsTrigger>
+          <TabsTrigger value="activity">{t("results.activityHistory")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="ad-results">
@@ -64,7 +63,7 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="font-medium">{outcome.title}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{outcome.outcome_summary || outcome.description || "No summary"}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{outcome.outcome_summary || outcome.description || t("results.noSummary")}</div>
                     </div>
                     <Badge>{outcome.outcome_status}</Badge>
                   </div>
@@ -73,13 +72,10 @@ export default function ResultsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <EmptyState
-                title="No ad optimization results"
-                description="改善提案を実装したら、before / after metrics を記録してください。"
-              />
+              <EmptyState title={t("results.noAdResults")} description={t("results.noAdResultsDescription")} />
               <div className="flex justify-center">
                 <Button asChild>
-                  <Link href="/ad-optimization">Open Ad Optimization</Link>
+                  <Link href="/ad-optimization">{t("results.openAdOptimization")}</Link>
                 </Button>
               </div>
             </div>
@@ -94,7 +90,7 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="font-medium">{run.query}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{summaryOverview(run.summary)}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{summaryOverview(run.summary, t("results.noOverview"))}</div>
                     </div>
                     <Badge variant="secondary">{run.status}</Badge>
                   </div>
@@ -103,13 +99,10 @@ export default function ResultsPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <EmptyState
-                title="No demand discovery results"
-                description="チャットでアイデアや訴求を相談すると、結果がここに表示されます。"
-              />
+              <EmptyState title={t("results.noDemandResults")} description={t("results.noDemandResultsDescription")} />
               <div className="flex justify-center">
                 <Button asChild>
-                  <Link href="/demand-discovery">Open Demand Discovery</Link>
+                  <Link href="/demand-discovery">{t("results.openDemandDiscovery")}</Link>
                 </Button>
               </div>
             </div>
@@ -124,7 +117,7 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="font-medium">{pr.title}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{pr.url || "No PR URL"}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{pr.url || t("results.noPrUrl")}</div>
                     </div>
                     <Badge>{pr.status}</Badge>
                   </div>
@@ -132,7 +125,7 @@ export default function ResultsPage() {
               ))}
             </div>
           ) : (
-            <EmptyState title="No implementation results" description="Ready to Apply の提案から実装タスクやPRが作られるとここに表示されます。" />
+            <EmptyState title={t("results.noImplementationResults")} description={t("results.noImplementationResultsDescription")} />
           )}
         </TabsContent>
 
@@ -144,7 +137,7 @@ export default function ResultsPage() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="font-medium">{item.summary || `${item.entity_type} ${item.action}`}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{item.reason || "No reason"}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{item.reason || t("results.noReason")}</div>
                     </div>
                     <div className="text-sm text-muted-foreground">{new Date(item.created_at).toLocaleString()}</div>
                   </div>
@@ -152,7 +145,7 @@ export default function ResultsPage() {
               ))}
             </div>
           ) : (
-            <EmptyState title="No activity" description="作成、更新、分析、判断、結果記録がここに表示されます。" />
+            <EmptyState title={t("results.noActivity")} description={t("results.noActivityDescription")} />
           )}
         </TabsContent>
       </Tabs>
@@ -169,10 +162,10 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function summaryOverview(summary: unknown) {
+function summaryOverview(summary: unknown, fallback: string) {
   if (summary && typeof summary === "object" && "overview" in summary) {
     const overview = (summary as { overview?: unknown }).overview;
     if (typeof overview === "string" && overview) return overview;
   }
-  return "No overview";
+  return fallback;
 }

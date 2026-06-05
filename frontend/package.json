@@ -8,6 +8,7 @@
     "lint": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.14.14",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-slot": "^1.1.1",
     "@supabase/supabase-js": "^2.106.2",
