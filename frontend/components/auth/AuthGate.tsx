@@ -8,12 +8,17 @@ import { useAuth } from "@/hooks/use-auth";
 
 const protectedRoots = [
   "/dashboard",
+  "/ad-optimization",
+  "/demand-discovery",
+  "/results",
   "/projects",
   "/ads",
   "/lps",
   "/pairs",
   "/orchestration",
   "/history",
+  "/campaigns",
+  "/lp",
   "/improvements",
   "/prs",
   "/settings",

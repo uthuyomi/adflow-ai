@@ -41,6 +41,8 @@ from backend.services.lp.lp_collector import LPCollection, LPCollector
 from backend.services.demand.demand_intelligence_service import DemandIntelligenceService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
+from backend.services.product.ad_optimization_service import AdOptimizationService
+from backend.services.product.demand_discovery_service import DemandDiscoveryService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 app = FastAPI(title="AdFlow AI")
@@ -112,6 +114,16 @@ class DemandSolutionFitRequest(BaseModel):
     fit_target_text: str
 
 
+class DemandDiscoveryInputRequest(BaseModel):
+    input: str = Field(min_length=1)
+
+
+class AdOptimizationAnalysisRunRequest(BaseModel):
+    pair_id: str | None = None
+    ai_mode: Literal["multi_provider", "openai_only"] = "openai_only"
+    locale: Literal["ja", "en"] = "ja"
+
+
 class OutcomeCreateRequest(BaseModel):
     project_id: str | None = None
     ad_lp_pair_id: str
@@ -135,11 +147,6 @@ class OutcomeUpdateRequest(BaseModel):
     description: str | None = None
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
 def _authenticated_user_id(authorization: str | None = Header(default=None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Bearer token is required.")
@@ -160,6 +167,139 @@ def _authenticated_user_id(authorization: str | None = Header(default=None)) -> 
         _AUTHENTICATED_USER_EMAILS[user_id] = email.lower()
     return user_id
 
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/ad-optimization/projects")
+def list_ad_optimization_projects(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_ad_optimization_service(load_settings()).list_projects(user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/ad-optimization/projects/{project_id}")
+def get_ad_optimization_project(project_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_optimization_service(load_settings()).get_project_overview(
+            user_id=user_id,
+            project_id=project_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/ad-optimization/projects/{project_id}/assets")
+def get_ad_optimization_assets(project_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_optimization_service(load_settings()).get_project_assets(
+            user_id=user_id,
+            project_id=project_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/ad-optimization/projects/{project_id}/analysis/run")
+def run_ad_optimization_analysis(
+    project_id: str,
+    request: AdOptimizationAnalysisRunRequest | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    request = request or AdOptimizationAnalysisRunRequest()
+    pairs = _repository_for_settings(load_settings()).get_many(
+        "ad_lp_pairs",
+        user_id=user_id,
+        filters={"project_id": project_id},
+        order="updated_at.desc",
+        limit=10,
+    )
+    pair_id = request.pair_id or (pairs[0]["id"] if pairs else None)
+    if not pair_id:
+        raise HTTPException(status_code=400, detail="Create an analysis target before running analysis.")
+    return run_pair_analysis(
+        pair_id=pair_id,
+        request=PairAnalysisRequest(ai_mode=request.ai_mode, locale=request.locale),
+        user_id=user_id,
+    )
+
+
+@app.get("/ad-optimization/projects/{project_id}/recommendations")
+def get_ad_optimization_recommendations(project_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_ad_optimization_service(load_settings()).get_project_recommendations(
+            user_id=user_id,
+            project_id=project_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/ad-optimization/projects/{project_id}/results")
+def get_ad_optimization_results(project_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_ad_optimization_service(load_settings()).get_project_results(
+            user_id=user_id,
+            project_id=project_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/demand-discovery/sessions")
+def list_demand_discovery_sessions(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_demand_discovery_service(load_settings()).list_sessions(user_id=user_id)
+
+
+@app.post("/demand-discovery/sessions")
+def create_demand_discovery_session(
+    request: DemandDiscoveryInputRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_demand_discovery_service(load_settings()).create_session(user_id=user_id, input_text=request.input)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/demand-discovery/sessions/{session_id}")
+def get_demand_discovery_session(session_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_demand_discovery_service(load_settings()).get_session(user_id=user_id, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/demand-discovery/sessions/{session_id}/messages")
+def add_demand_discovery_message(
+    session_id: str,
+    request: DemandDiscoveryInputRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_demand_discovery_service(load_settings()).add_message(
+            user_id=user_id,
+            session_id=session_id,
+            input_text=request.input,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/demand-discovery/analyze")
+def analyze_demand_discovery(
+    request: DemandDiscoveryInputRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        service = _build_demand_discovery_service(load_settings())
+        insight = service.analyze(input_text=request.input)
+        return {"insight": insight, "assistant_message": service.assistant_message(insight)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 @app.post("/workflow/run", response_model=AdFlowWorkflowResult)
 def run_workflow(
@@ -647,6 +787,14 @@ def _build_demand_intelligence_service(settings: Settings) -> DemandIntelligence
     if settings.supabase_url is None or settings.supabase_key is None:
         raise ValueError("SUPABASE_URL and Supabase key are required.")
     return DemandIntelligenceService(repository=_repository_for_settings(settings), settings=settings)
+
+
+def _build_ad_optimization_service(settings: Settings) -> AdOptimizationService:
+    return AdOptimizationService(repository=_repository_for_settings(settings))
+
+
+def _build_demand_discovery_service(settings: Settings) -> DemandDiscoveryService:
+    return DemandDiscoveryService(repository=_repository_for_settings(settings))
 
 
 def _repository_for_settings(settings: Settings) -> SupabaseRepository:

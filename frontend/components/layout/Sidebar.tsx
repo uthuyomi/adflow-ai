@@ -4,17 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
-  Boxes,
-  BrainCircuit,
-  Clock3,
-  FileDiff,
-  Gauge,
   LayoutDashboard,
-  Link2,
-  Megaphone,
+  Lightbulb,
+  LineChart,
   Settings,
-  Sparkles,
-  SquareKanban,
+  Target,
   X,
 } from "lucide-react";
 
@@ -25,16 +19,9 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
-  { href: "/projects", labelKey: "nav.projects", icon: SquareKanban },
-  { href: "/ads", labelKey: "nav.ads", icon: Megaphone },
-  { href: "/lps", labelKey: "nav.lps", icon: Boxes },
-  { href: "/pairs", labelKey: "nav.pairs", icon: Link2 },
-  { href: "/orchestration", labelKey: "nav.orchestration", icon: BrainCircuit },
-  { href: "/history", labelKey: "nav.history", icon: Clock3 },
-  { href: "/campaigns", labelKey: "nav.campaigns", icon: Megaphone },
-  { href: "/lp", labelKey: "nav.lpAnalysis", icon: Gauge },
-  { href: "/improvements", labelKey: "nav.improvements", icon: Sparkles },
-  { href: "/prs", labelKey: "nav.prs", icon: FileDiff },
+  { href: "/ad-optimization", labelKey: "nav.adOptimization", icon: Target },
+  { href: "/demand-discovery", labelKey: "nav.demandDiscovery", icon: Lightbulb },
+  { href: "/results", labelKey: "nav.results", icon: LineChart },
   { href: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 
