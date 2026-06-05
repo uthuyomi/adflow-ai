@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Settings(BaseModel):
@@ -38,6 +38,8 @@ class Settings(BaseModel):
     demand_embedding_provider: str = "deterministic"
     demand_embedding_model: str = "deterministic-hash-embedding.v1"
     openai_embedding_model: str = "text-embedding-3-small"
+    auto_top_up_credit_emails: set[str] = Field(default_factory=set)
+    auto_top_up_credit_amount: int = 5000
 
     def validate_runtime(self) -> None:
         if self.ai_provider == "openai":
@@ -100,6 +102,8 @@ def load_settings() -> Settings:
         demand_embedding_provider=os.getenv("DEMAND_EMBEDDING_PROVIDER", "deterministic"),
         demand_embedding_model=os.getenv("DEMAND_EMBEDDING_MODEL", "deterministic-hash-embedding.v1"),
         openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+        auto_top_up_credit_emails=_env_set("ADFLOW_AUTO_TOP_UP_CREDIT_EMAILS"),
+        auto_top_up_credit_amount=int(os.getenv("ADFLOW_AUTO_TOP_UP_CREDIT_AMOUNT", "5000")),
     )
 
 
@@ -108,3 +112,10 @@ def _env_bool(key: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_set(key: str) -> set[str]:
+    value = os.getenv(key)
+    if not value:
+        return set()
+    return {item.strip().lower() for item in value.split(",") if item.strip()}

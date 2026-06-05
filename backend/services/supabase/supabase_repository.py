@@ -10,7 +10,7 @@ class SupabaseRepository:
         self.supabase_url = supabase_url.rstrip("/")
         self.supabase_key = supabase_key
 
-    def get_user_id(self, access_token: str) -> str:
+    def get_user(self, access_token: str) -> dict[str, Any]:
         response = requests.get(
             f"{self.supabase_url}/auth/v1/user",
             headers={
@@ -20,10 +20,14 @@ class SupabaseRepository:
             timeout=30,
         )
         self._raise(response, "Supabase auth lookup failed")
-        user_id = response.json().get("id")
+        user = response.json()
+        user_id = user.get("id")
         if not user_id:
             raise ValueError("Supabase auth response did not include a user id.")
-        return user_id
+        return user
+
+    def get_user_id(self, access_token: str) -> str:
+        return str(self.get_user(access_token)["id"])
 
     def get_one(
         self,

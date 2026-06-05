@@ -42,6 +42,36 @@ class CreditService:
         total = int(balance["monthly_credits"]) + int(balance["purchased_credits"])
         return total >= amount, total
 
+    def ensure_available(
+        self,
+        user_id: str,
+        amount: int,
+        *,
+        auto_top_up_amount: int | None = None,
+        reason: str = "auto_top_up",
+    ) -> dict[str, Any]:
+        balance = self.get_balance(user_id)
+        total = int(balance["monthly_credits"]) + int(balance["purchased_credits"])
+        if total >= amount:
+            return balance
+        if not auto_top_up_amount or auto_top_up_amount <= 0:
+            raise InsufficientCreditsError(required_credits=amount, current_credits=total)
+
+        top_up_amount = max(auto_top_up_amount, amount - total)
+        return self.add_purchased_credits(user_id=user_id, amount=top_up_amount, reason=reason)
+
+    def add_purchased_credits(self, user_id: str, amount: int, reason: str) -> dict[str, Any]:
+        balance = self.repository.rpc(
+            "add_purchased_credits",
+            {
+                "p_user_id": user_id,
+                "p_amount": amount,
+                "p_reason": reason,
+                "p_stripe_event_id": None,
+            },
+        )
+        return self._normalize_balance(balance)
+
     def consume(self, user_id: str, amount: int, reason: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         enough, total = self.has_enough(user_id, amount)
         if not enough:

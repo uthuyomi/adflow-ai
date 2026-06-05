@@ -44,6 +44,7 @@ from backend.services.outcomes.improvement_outcome_service import ImprovementOut
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 app = FastAPI(title="AdFlow AI")
+_AUTHENTICATED_USER_EMAILS: dict[str, str] = {}
 
 
 def _cors_origins() -> list[str]:
@@ -147,12 +148,17 @@ def _authenticated_user_id(authorization: str | None = Header(default=None)) -> 
         raise HTTPException(status_code=500, detail="Supabase settings are required.")
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        return SupabaseRepository(
+        user = SupabaseRepository(
             supabase_url=settings.supabase_url,
             supabase_key=settings.supabase_key,
-        ).get_user_id(token)
+        ).get_user(token)
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    user_id = str(user["id"])
+    email = user.get("email")
+    if isinstance(email, str) and email:
+        _AUTHENTICATED_USER_EMAILS[user_id] = email.lower()
+    return user_id
 
 
 @app.post("/workflow/run", response_model=AdFlowWorkflowResult)
@@ -654,8 +660,11 @@ def _repository_for_settings(settings: Settings) -> SupabaseRepository:
 
 def _consume_feature_credits(user_id: str, feature_key: str, metadata: dict[str, Any]) -> None:
     cost = CREDIT_COSTS[feature_key]
+    settings = load_settings()
+    service = CreditService(_repository_for_settings(settings))
     try:
-        CreditService(_repository_for_settings(load_settings())).consume(
+        _ensure_auto_top_up_credits(service=service, settings=settings, user_id=user_id, amount=cost.amount)
+        service.consume(
             user_id=user_id,
             amount=cost.amount,
             reason=cost.reason,
@@ -675,10 +684,24 @@ def _consume_feature_credits(user_id: str, feature_key: str, metadata: dict[str,
 
 def _require_feature_credits(user_id: str, feature_key: str) -> None:
     cost = CREDIT_COSTS[feature_key]
+    settings = load_settings()
+    service = CreditService(_repository_for_settings(settings))
     try:
-        enough, total = CreditService(_repository_for_settings(load_settings())).has_enough(user_id, cost.amount)
+        balance = _ensure_auto_top_up_credits(service=service, settings=settings, user_id=user_id, amount=cost.amount)
+    except InsufficientCreditsError as exc:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "INSUFFICIENT_CREDITS",
+                "message": "Credits are insufficient.",
+                "requiredCredits": exc.required_credits,
+                "currentCredits": exc.current_credits,
+            },
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    total = int(balance["monthly_credits"]) + int(balance["purchased_credits"])
+    enough = total >= cost.amount
     if not enough:
         raise HTTPException(
             status_code=402,
@@ -689,6 +712,27 @@ def _require_feature_credits(user_id: str, feature_key: str) -> None:
                 "currentCredits": total,
             },
         )
+
+
+def _ensure_auto_top_up_credits(
+    *,
+    service: CreditService,
+    settings: Settings,
+    user_id: str,
+    amount: int,
+) -> dict[str, Any]:
+    email = _AUTHENTICATED_USER_EMAILS.get(user_id, "").lower()
+    auto_top_up_amount = (
+        settings.auto_top_up_credit_amount
+        if email and email in settings.auto_top_up_credit_emails
+        else None
+    )
+    return service.ensure_available(
+        user_id,
+        amount,
+        auto_top_up_amount=auto_top_up_amount,
+        reason="trusted_account_auto_top_up",
+    )
 
 
 def _build_outcome_service(settings: Settings) -> ImprovementOutcomeService:
