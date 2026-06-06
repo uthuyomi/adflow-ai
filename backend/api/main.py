@@ -42,6 +42,7 @@ from backend.services.lp.lp_collector import LPCollection, LPCollector
 from backend.services.demand.demand_intelligence_service import DemandIntelligenceService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
+from backend.services.product.ad_ab_test_service import AdABTestService
 from backend.services.product.ad_optimization_service import AdOptimizationService
 from backend.services.product.asset_import_service import AssetImportService
 from backend.services.product.demand_discovery_service import DemandDiscoveryService
@@ -146,6 +147,17 @@ class SyncXAdsRequest(BaseModel):
     ads: list[dict[str, Any]] | None = None
     auto_fetch_lps: bool = True
     auto_pair: bool = True
+
+
+class CreateAdABTestRequest(BaseModel):
+    name: str = Field(min_length=1)
+    hypothesis: str | None = None
+    primary_metric: Literal["ctr", "cvr", "cpc"] = "ctr"
+    ad_ids: list[str] = Field(min_length=2)
+
+
+class UpdateAdABTestStatusRequest(BaseModel):
+    status: Literal["draft", "running", "completed", "archived"]
 
 
 class OutcomeCreateRequest(BaseModel):
@@ -271,6 +283,49 @@ def get_ad_optimization_results(project_id: str, user_id: str = Depends(_authent
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/ad-optimization/projects/{project_id}/ab-tests")
+def list_ad_ab_tests(project_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).list_tests(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/ad-optimization/projects/{project_id}/ab-tests")
+def create_ad_ab_test(
+    project_id: str,
+    request: CreateAdABTestRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).create_test(
+            user_id=user_id,
+            project_id=project_id,
+            name=request.name,
+            hypothesis=request.hypothesis,
+            primary_metric=request.primary_metric,
+            ad_ids=request.ad_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/ad-optimization/ab-tests/{test_id}/status")
+def update_ad_ab_test_status(
+    test_id: str,
+    request: UpdateAdABTestStatusRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).update_status(
+            user_id=user_id,
+            test_id=test_id,
+            status=request.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/demand-discovery/sessions")
@@ -882,6 +937,10 @@ def _build_demand_discovery_service(settings: Settings) -> DemandDiscoveryServic
 
 def _build_asset_import_service(settings: Settings) -> AssetImportService:
     return AssetImportService(repository=_repository_for_settings(settings), settings=settings)
+
+
+def _build_ad_ab_test_service(settings: Settings) -> AdABTestService:
+    return AdABTestService(repository=_repository_for_settings(settings))
 
 
 def _repository_for_settings(settings: Settings) -> SupabaseRepository:

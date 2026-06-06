@@ -63,6 +63,58 @@ export type AssetImportSummary = {
   source?: string;
 };
 
+export type AdABTestVariant = {
+  id: string;
+  label: string;
+  twitter_ad_id: string;
+  metric_value: number;
+  ad: {
+    id: string;
+    name: string;
+    headline: string | null;
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    spend: number;
+  } | null;
+};
+
+export type AdABTest = {
+  id: string;
+  project_id: string;
+  name: string;
+  hypothesis: string | null;
+  primary_metric: "ctr" | "cvr" | "cpc";
+  status: "draft" | "running" | "completed" | "archived";
+  variants: AdABTestVariant[];
+  provisional_winner: AdABTestVariant | null;
+  note: string;
+  created_at: string;
+};
+
+export async function listAdABTests(projectId: string) {
+  return requestWithAuth<AdABTest[]>(`/ad-optimization/projects/${projectId}/ab-tests`);
+}
+
+export async function createAdABTest(projectId: string, payload: {
+  name: string;
+  hypothesis?: string | null;
+  primary_metric: "ctr" | "cvr" | "cpc";
+  ad_ids: string[];
+}) {
+  return requestWithAuth<AdABTest>(`/ad-optimization/projects/${projectId}/ab-tests`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdABTestStatus(testId: string, status: AdABTest["status"]) {
+  return requestWithAuth<AdABTest>(`/ad-optimization/ab-tests/${testId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function importLandingPageFromUrl(payload: {
   url: string;
   project_id?: string | null;

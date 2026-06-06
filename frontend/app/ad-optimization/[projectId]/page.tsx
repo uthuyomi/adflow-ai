@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import type { ReactNode } from "react";
-import { Activity, FileText, Megaphone, Play, Plus, Sparkles } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import { Activity, FileText, FlaskConical, Megaphone, Play, Plus, Sparkles, Trophy } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -12,7 +13,10 @@ import { SectionHeader } from "@/components/shared/SectionHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { useAdABTestMutations, useAdABTests } from "@/hooks/use-ad-ab-tests";
 import { useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
 import { useChangeHistory } from "@/hooks/use-change-history";
 import { useI18n } from "@/hooks/use-i18n";
@@ -20,6 +24,8 @@ import { useLandingPages } from "@/hooks/use-landing-pages";
 import { useProject } from "@/hooks/use-projects";
 import { useTwitterAds } from "@/hooks/use-twitter-ads";
 import { useOutcomesDashboard } from "@/hooks/useAdflowData";
+import type { AdABTest } from "@/lib/api/product";
+import type { TwitterAd } from "@/lib/types/adflow";
 
 export default function AdOptimizationProjectPage() {
   const { t } = useI18n();
@@ -30,6 +36,8 @@ export default function AdOptimizationProjectPage() {
   const pairs = useAdLpPairs();
   const outcomes = useOutcomesDashboard();
   const history = useChangeHistory();
+  const abTests = useAdABTests(params.projectId);
+  const abTestMutations = useAdABTestMutations(params.projectId);
 
   const isLoading = project.isLoading || ads.isLoading || lps.isLoading || pairs.isLoading || outcomes.isLoading || history.isLoading;
   const isError = project.isError || ads.isError || lps.isError || pairs.isError || outcomes.isError || history.isError;
@@ -78,6 +86,7 @@ export default function AdOptimizationProjectPage() {
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="overview">{t("adOptimization.tabOverview")}</TabsTrigger>
           <TabsTrigger value="assets">{t("adOptimization.tabAssets")}</TabsTrigger>
+          <TabsTrigger value="ab-tests">A/B Tests</TabsTrigger>
           <TabsTrigger value="analysis">{t("adOptimization.tabAnalysis")}</TabsTrigger>
           <TabsTrigger value="recommendations">{t("adOptimization.tabRecommendations")}</TabsTrigger>
           <TabsTrigger value="results">{t("adOptimization.tabResults")}</TabsTrigger>
@@ -127,6 +136,32 @@ export default function AdOptimizationProjectPage() {
               title={t("adOptimization.landingPages")}
             />
           </div>
+        </TabsContent>
+
+        <TabsContent value="ab-tests">
+          <ABTestsPanel
+            ads={projectAds}
+            error={abTests.isError}
+            isCreating={abTestMutations.create.isPending}
+            isUpdating={abTestMutations.updateStatus.isPending}
+            onCreate={async (payload) => {
+              try {
+                await abTestMutations.create.mutateAsync(payload);
+                toast.success("A/B test created.");
+              } catch (caught) {
+                toast.error(caught instanceof Error ? caught.message : "A/B test creation failed.");
+              }
+            }}
+            onStatus={async (testId, status) => {
+              try {
+                await abTestMutations.updateStatus.mutateAsync({ testId, status });
+                toast.success("A/B test status updated.");
+              } catch (caught) {
+                toast.error(caught instanceof Error ? caught.message : "A/B test update failed.");
+              }
+            }}
+            tests={abTests.data ?? []}
+          />
         </TabsContent>
 
         <TabsContent value="analysis">
@@ -258,6 +293,167 @@ function SummaryCard({ icon, label, value }: { icon: ReactNode; label: string; v
           <div className="text-2xl font-semibold">{value}</div>
         </div>
       </div>
+    </Card>
+  );
+}
+
+function ABTestsPanel({
+  ads,
+  tests,
+  error,
+  isCreating,
+  isUpdating,
+  onCreate,
+  onStatus,
+}: {
+  ads: TwitterAd[];
+  tests: AdABTest[];
+  error: boolean;
+  isCreating: boolean;
+  isUpdating: boolean;
+  onCreate: (payload: { name: string; hypothesis: string | null; primary_metric: "ctr" | "cvr" | "cpc"; ad_ids: string[] }) => Promise<void>;
+  onStatus: (testId: string, status: AdABTest["status"]) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [hypothesis, setHypothesis] = useState("");
+  const [metric, setMetric] = useState<"ctr" | "cvr" | "cpc">("ctr");
+  const [selectedAds, setSelectedAds] = useState<string[]>([]);
+
+  const toggleAd = (adId: string) => {
+    setSelectedAds((current) => current.includes(adId) ? current.filter((id) => id !== adId) : [...current, adId]);
+  };
+
+  return (
+    <div className="space-y-4">
+      {error ? (
+        <Card className="border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+          A/B test storage is not available yet. Apply migration <code>202606060001_ad_ab_tests.sql</code> to Supabase.
+        </Card>
+      ) : null}
+      <Card>
+        <CardHeader>
+          <CardTitle>Create an ad A/B test</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Select two or more ads from this project. Current registered metrics are used for a directional comparison.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Test name</span>
+              <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="LP promise angle test" />
+            </label>
+            <label className="space-y-1 text-sm">
+              <span className="font-medium">Primary metric</span>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={metric}
+                onChange={(event) => setMetric(event.target.value as "ctr" | "cvr" | "cpc")}
+              >
+                <option value="ctr">CTR</option>
+                <option value="cvr">CVR</option>
+                <option value="cpc">CPC</option>
+              </select>
+            </label>
+          </div>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">Hypothesis</span>
+            <Textarea
+              value={hypothesis}
+              onChange={(event) => setHypothesis(event.target.value)}
+              placeholder="A narrower promise will improve qualified clicks."
+            />
+          </label>
+          <div className="grid gap-2 md:grid-cols-2">
+            {ads.map((ad) => (
+              <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-accent" key={ad.id}>
+                <input
+                  checked={selectedAds.includes(ad.id)}
+                  className="mt-1 h-4 w-4"
+                  onChange={() => toggleAd(ad.id)}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block font-medium">{ad.name}</span>
+                  <span className="block text-sm text-muted-foreground">{ad.headline || ad.destination_url}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <Button
+              disabled={error || isCreating || !name.trim() || selectedAds.length < 2}
+              onClick={async () => {
+                await onCreate({ name: name.trim(), hypothesis: hypothesis.trim() || null, primary_metric: metric, ad_ids: selectedAds });
+                setName("");
+                setHypothesis("");
+                setSelectedAds([]);
+              }}
+              type="button"
+            >
+              <FlaskConical className="mr-2 h-4 w-4" />
+              Create A/B test
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {tests.length ? (
+        tests.map((test) => <ABTestCard disabled={isUpdating} key={test.id} onStatus={onStatus} test={test} />)
+      ) : (
+        <EmptyState title="No A/B tests" description="Create a test after registering at least two ads in this project." />
+      )}
+    </div>
+  );
+}
+
+function ABTestCard({
+  test,
+  disabled,
+  onStatus,
+}: {
+  test: AdABTest;
+  disabled: boolean;
+  onStatus: (testId: string, status: AdABTest["status"]) => Promise<void>;
+}) {
+  const formatMetric = (value: number) => test.primary_metric === "cpc" ? value.toFixed(2) : `${value.toFixed(2)}%`;
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div>
+          <CardTitle>{test.name}</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">{test.hypothesis || "No hypothesis recorded."}</p>
+        </div>
+        <Badge>{test.status}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          {test.variants.map((variant) => (
+            <div className="rounded-md border border-border p-4" key={variant.id}>
+              <div className="flex items-center justify-between gap-3">
+                <Badge variant="outline">Variant {variant.label}</Badge>
+                <span className="font-semibold">{test.primary_metric.toUpperCase()} {formatMetric(variant.metric_value)}</span>
+              </div>
+              <div className="mt-3 font-medium">{variant.ad?.name || "Missing ad"}</div>
+              <div className="mt-1 text-sm text-muted-foreground">{variant.ad?.headline || "-"}</div>
+            </div>
+          ))}
+        </div>
+        {test.provisional_winner ? (
+          <div className="flex items-start gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
+            <Trophy className="mt-0.5 h-4 w-4 text-emerald-600" />
+            <div>
+              <div className="font-medium">Provisional winner: Variant {test.provisional_winner.label}</div>
+              <div className="text-sm text-muted-foreground">{test.note}</div>
+            </div>
+          </div>
+        ) : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          {test.status === "draft" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "running")} size="sm">Start test</Button> : null}
+          {test.status === "running" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "completed")} size="sm">Complete test</Button> : null}
+          {test.status !== "archived" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "archived")} size="sm" variant="outline">Archive</Button> : null}
+        </div>
+      </CardContent>
     </Card>
   );
 }
