@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "lint": "next typegen && tsc --noEmit"
+    "lint": "next typegen && tsc --noEmit",
+    "i18n:audit": "node scripts/i18n-audit.mjs"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.14.14",

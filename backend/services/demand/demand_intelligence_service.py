@@ -43,6 +43,7 @@ SourceType = Literal[
     "review_site",
     "app_store_review",
     "google_play_review",
+    "synthetic",
 ]
 
 PAIN_CATEGORIES = [
@@ -78,6 +79,12 @@ DESIRE_CATEGORIES = [
     "学習したい",
 ]
 
+PERSONAS = ["個人開発者", "フリーランス", "広告代理店", "中小企業", "大企業", "マーケ担当", "経営者", "エンジニア", "デザイナー", "学生", "その他"]
+
+
+# Release-facing labels override legacy mojibake values while preserving the existing pipeline.
+PAIN_CATEGORIES = ["作業負荷", "コスト", "時間", "UI", "機能不足", "複雑さ", "学習コスト", "サポート不足", "速度", "安定性", "信頼性", "データ管理", "レポート作成", "分析", "運用", "自動化不足", "その他"]
+DESIRE_CATEGORIES = ["自動化したい", "簡単にしたい", "速くしたい", "安くしたい", "統合したい", "見える化したい", "共有したい", "管理したい", "改善したい", "学習したい"]
 PERSONAS = ["個人開発者", "フリーランス", "広告代理店", "中小企業", "大企業", "マーケ担当", "経営者", "エンジニア", "デザイナー", "学生", "その他"]
 
 
@@ -135,7 +142,7 @@ class DemandCluster(BaseModel):
     persona_ratios: dict[str, float]
     root_causes: list[str]
     demand_signal_score: int = Field(ge=0, le=100)
-    trend: Literal["増加", "減少", "急増", "横ばい"]
+    trend: Literal["増加", "減少", "急増", "横ばい", "growing", "declining", "spike", "stable"]
     evidence_signal_indexes: list[int]
     validation_score: float = 0
     fit_score: float | None = None
@@ -255,18 +262,43 @@ class DemandIntelligenceService:
         self,
         *,
         user_id: str,
-        project_id: str | None,
-        ad_lp_pair_id: str,
+        project_id: str | None = None,
+        ad_lp_pair_id: str | None = None,
         query: str,
         locale: str = "ja",
+        mode: Literal["pair_analysis", "discovery"] = "pair_analysis",
+        discovery_session_id: str | None = None,
+        scope_type: str | None = None,
+        target_segment: str | None = None,
+        problem_statement: str | None = None,
+        product_idea: str | None = None,
+        research_query: str | None = None,
+        research_fingerprint: str | None = None,
+        source_urls: list[str] | None = None,
     ) -> dict[str, Any]:
         if not query.strip():
             raise ValueError("query is required.")
-        pair = self.repository.get_one("ad_lp_pairs", user_id=user_id, filters={"id": ad_lp_pair_id})
-        if project_id is None:
-            project_id = pair.get("project_id")
-        ad = self._safe_get_one("twitter_ads", user_id=user_id, record_id=pair.get("twitter_ad_id"))
-        lp = self._safe_get_one("landing_pages", user_id=user_id, record_id=pair.get("landing_page_id"))
+        if mode == "pair_analysis":
+            if not ad_lp_pair_id:
+                raise ValueError("ad_lp_pair_id is required for pair_analysis.")
+            pair = self.repository.get_one("ad_lp_pairs", user_id=user_id, filters={"id": ad_lp_pair_id})
+            if project_id is None:
+                project_id = pair.get("project_id")
+            ad = self._safe_get_one("twitter_ads", user_id=user_id, record_id=pair.get("twitter_ad_id"))
+            lp = self._safe_get_one("landing_pages", user_id=user_id, record_id=pair.get("landing_page_id"))
+        else:
+            if not discovery_session_id:
+                raise ValueError("discovery_session_id is required for discovery mode.")
+            pair = {"name": product_idea or query, "project_id": project_id}
+            ad = {
+                "headline": product_idea or query,
+                "body": problem_statement or "",
+            }
+            lp = {
+                "hero_title": product_idea or query,
+                "offer_text": problem_statement or "",
+                "target_audience": target_segment or "",
+            }
 
         run = self.repository.insert(
             "demand_intelligence_runs",
@@ -278,6 +310,14 @@ class DemandIntelligenceService:
                 "status": "running",
                 "summary": {},
                 "real_sources_enabled": self.settings.demand_real_sources_enabled,
+                "mode": mode,
+                "discovery_session_id": discovery_session_id,
+                "scope_type": scope_type,
+                "target_segment": target_segment,
+                "problem_statement": problem_statement,
+                "product_idea": product_idea,
+                "research_query": research_query or query.strip(),
+                "research_fingerprint": research_fingerprint,
             },
         )
         try:
@@ -288,22 +328,25 @@ class DemandIntelligenceService:
                 pair=pair,
                 ad=ad,
                 lp=lp,
+                source_urls=source_urls,
+                product_idea=product_idea,
+                locale=locale,
             )
             if not raw_signals:
                 raise ValueError("No demand signals were collected.")
             normalized = self._normalize_signals(raw_signals)
-            pains = self._extract_pains(normalized)
-            desires = self._extract_desires(normalized)
-            churn_reasons = self._extract_churn_reasons(normalized)
+            pains = self._extract_pains(normalized, locale=locale)
+            desires = self._extract_desires(normalized, locale=locale)
+            churn_reasons = self._extract_churn_reasons(normalized, locale=locale)
             embeddings = [self._embed(signal.normalized_text) for signal in normalized]
-            clusters = self._cluster(normalized=normalized, pains=pains, desires=desires)
-            competitors = self._analyze_competitors(query=query, normalized=normalized, churn_reasons=churn_reasons)
-            gaps = self._market_gaps(clusters=clusters, competitors=competitors)
-            opportunities = self._opportunities(gaps=gaps)
-            features = self._feature_suggestions(opportunities=opportunities)
-            positioning = self._positioning(query=query, gaps=gaps, competitors=competitors)
-            ad_appeals = self._ad_appeals(query=query, clusters=clusters, positioning=positioning)
-            lp_context = self._lp_context(clusters=clusters, opportunities=opportunities)
+            clusters = self._cluster(normalized=normalized, pains=pains, desires=desires, locale=locale)
+            competitors = self._analyze_competitors(query=query, normalized=normalized, churn_reasons=churn_reasons, locale=locale)
+            gaps = self._market_gaps(clusters=clusters, competitors=competitors, locale=locale)
+            opportunities = self._opportunities(gaps=gaps, locale=locale)
+            features = self._feature_suggestions(opportunities=opportunities, locale=locale)
+            positioning = self._positioning(query=query, gaps=gaps, competitors=competitors, locale=locale)
+            ad_appeals = self._ad_appeals(query=query, clusters=clusters, positioning=positioning, locale=locale)
+            lp_context = self._lp_context(clusters=clusters, opportunities=opportunities, locale=locale)
 
             inserted_signals: list[dict[str, Any]] = []
             for index, signal in enumerate(raw_signals):
@@ -368,6 +411,7 @@ class DemandIntelligenceService:
             validations, validation_summary = self.validation_engine.validate(
                 signals=inserted_signals,
                 clusters=inserted_clusters,
+                locale=locale,
             )
             validation_rows = []
             for validation in validations:
@@ -436,6 +480,7 @@ class DemandIntelligenceService:
             solution_fits, solution_fit_summary = self.solution_fit_engine.evaluate(
                 clusters=inserted_clusters,
                 targets=targets,
+                locale=locale,
             )
             fit_rows = self.repository.insert_demand_solution_fits(
                 [
@@ -459,7 +504,11 @@ class DemandIntelligenceService:
                     for fit in solution_fits
                 ],
             )
-            previous_snapshots = self.repository.get_demand_snapshots_for_cluster(user_id=user_id, pair_id=ad_lp_pair_id, limit=100)
+            previous_snapshots = (
+                self.repository.get_demand_snapshots_for_cluster(user_id=user_id, pair_id=ad_lp_pair_id, limit=100)
+                if ad_lp_pair_id
+                else []
+            )
             snapshots, monitoring_summary = self.monitoring_engine.snapshot(
                 clusters=inserted_clusters,
                 validations=validations,
@@ -490,13 +539,14 @@ class DemandIntelligenceService:
                     )
                     cluster["trend_status"] = trend_status
 
-            expanded_queries = self.query_builder.build(query=query, pair=pair, ad=ad, lp=lp)
+            expanded_queries = self.query_builder.build(query=query, pair=pair, ad=ad, lp=lp, source_urls=source_urls, locale=locale)
             search_signals, search_demand_summary = self.search_demand_layer.build(
                 query=query,
                 expanded_queries=expanded_queries,
                 clusters=inserted_clusters,
                 opportunities=opportunities,
                 features=features,
+                locale=locale,
             )
             search_rows = self.repository.insert_demand_search_signals(
                 [
@@ -526,6 +576,7 @@ class DemandIntelligenceService:
                 search_signals=search_signals,
                 solution_fits=solution_fits,
                 competitor_gaps=gaps,
+                locale=locale,
             )
             market_rows = self.repository.insert_demand_market_size_estimates(
                 [
@@ -550,16 +601,21 @@ class DemandIntelligenceService:
                     for estimate in market_estimates
                 ],
             )
-            recent_outcomes = self.repository.get_improvement_outcomes_for_analysis_context(
-                user_id=user_id,
-                pair_id=ad_lp_pair_id,
-                limit=30,
+            recent_outcomes = (
+                self.repository.get_improvement_outcomes_for_analysis_context(
+                    user_id=user_id,
+                    pair_id=ad_lp_pair_id,
+                    limit=30,
+                )
+                if ad_lp_pair_id
+                else []
             )
             learning_links, outcome_learning_summary = self.outcome_learning.build(
                 clusters=inserted_clusters,
                 outcomes=recent_outcomes,
                 search_signals=search_signals,
                 market_estimates=market_estimates,
+                locale=locale,
             )
             learning_rows = self.repository.insert_demand_outcome_learning_links(
                 [
@@ -781,29 +837,34 @@ class DemandIntelligenceService:
         pair: dict[str, Any],
         ad: dict[str, Any] | None,
         lp: dict[str, Any] | None,
+        source_urls: list[str] | None = None,
+        product_idea: str | None = None,
+        locale: str = "ja",
     ) -> tuple[list[DemandRawSignal], dict[str, Any]]:
-        expanded = self.query_builder.build(query=query, pair=pair, ad=ad, lp=lp)
+        expanded = self.query_builder.build(query=query, pair=pair, ad=ad, lp=lp, source_urls=source_urls, locale=locale)
         all_signals: list[DemandRawSignal] = []
         source_results: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc).isoformat()
-        for connector in self.connector_registry.skipped_connectors():
-            source_run = self.repository.create_demand_source_run(
-                {
-                    "user_id": user_id,
-                    "run_id": run_id,
-                    "source_type": connector.source_type,
-                    "query": query,
-                    "status": "skipped",
-                    "requested_count": 0,
-                    "collected_count": 0,
-                    "stored_count": 0,
-                    "completed_at": now,
-                    "metadata": {"connector_key": connector.connector_key, "reason": "missing_api_key"},
-                },
-            )
-            source_results.append(source_run)
 
-        for connector in self.connector_registry.selected_connectors():
+        def record_skipped(connector: Any, reason: str) -> None:
+            source_results.append(
+                self.repository.create_demand_source_run(
+                    {
+                        "user_id": user_id,
+                        "run_id": run_id,
+                        "source_type": connector.source_type,
+                        "query": query,
+                        "status": "skipped",
+                        "requested_count": 0,
+                        "collected_count": 0,
+                        "stored_count": 0,
+                        "completed_at": now,
+                        "metadata": {"connector_key": connector.connector_key, "reason": reason},
+                    },
+                ),
+            )
+
+        def execute_connector(connector: Any, connector_queries: list[str]) -> list[DemandRawSignal]:
             source_run = self.repository.create_demand_source_run(
                 {
                     "user_id": user_id,
@@ -817,30 +878,35 @@ class DemandIntelligenceService:
                 },
             )
             try:
-                request = DemandConnectorRequest(
-                    query=query,
-                    expanded_queries=expanded.get(connector.connector_key, []) or expanded.get(connector.source_type, []),
-                    max_results=min(self.settings.demand_max_signals_per_source, self.settings.demand_max_signals_per_run),
-                    project_id=pair.get("project_id"),
-                    ad_lp_pair_id=pair.get("id"),
-                    metadata={"pair_name": pair.get("name"), "pair": pair},
+                response = connector.collect(
+                    DemandConnectorRequest(
+                        query=query,
+                        expanded_queries=connector_queries,
+                        max_results=min(
+                            self.settings.demand_max_signals_per_source,
+                            self.settings.demand_max_signals_per_run,
+                        ),
+                        project_id=pair.get("project_id"),
+                        ad_lp_pair_id=pair.get("id"),
+                        language=locale,
+                        metadata={"pair_name": pair.get("name"), "pair": pair, "product_idea": product_idea},
+                    ),
                 )
-                response = connector.collect(request)
-                all_signals.extend(response.signals)
                 status = response.status if response.status in {"completed", "partial", "failed", "skipped"} else "partial"
-                updated = self.repository.update_demand_source_run(
-                    user_id=user_id,
-                    source_run_id=source_run["id"],
-                    payload={
-                        "status": status,
-                        "collected_count": len(response.signals),
-                        "stored_count": len(response.signals),
-                        "error_message": response.error_message,
-                        "completed_at": datetime.now(timezone.utc).isoformat(),
-                        "metadata": {**response.metadata, "connector_key": connector.connector_key},
-                    },
+                source_results.append(
+                    self.repository.update_demand_source_run(
+                        user_id=user_id,
+                        source_run_id=source_run["id"],
+                        payload={
+                            "status": status,
+                            "collected_count": len(response.signals),
+                            "stored_count": len(response.signals),
+                            "error_message": response.error_message,
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                            "metadata": {**response.metadata, "connector_key": connector.connector_key},
+                        },
+                    ),
                 )
-                source_results.append(updated)
                 if response.error_message:
                     self.repository.create_demand_connector_log(
                         {
@@ -853,17 +919,19 @@ class DemandIntelligenceService:
                             "metadata": response.metadata,
                         },
                     )
+                return response.signals
             except Exception as exc:
-                updated = self.repository.update_demand_source_run(
-                    user_id=user_id,
-                    source_run_id=source_run["id"],
-                    payload={
-                        "status": "failed",
-                        "error_message": str(exc),
-                        "completed_at": datetime.now(timezone.utc).isoformat(),
-                    },
+                source_results.append(
+                    self.repository.update_demand_source_run(
+                        user_id=user_id,
+                        source_run_id=source_run["id"],
+                        payload={
+                            "status": "failed",
+                            "error_message": str(exc),
+                            "completed_at": datetime.now(timezone.utc).isoformat(),
+                        },
+                    ),
                 )
-                source_results.append(updated)
                 self.repository.create_demand_connector_log(
                     {
                         "user_id": user_id,
@@ -875,6 +943,35 @@ class DemandIntelligenceService:
                         "metadata": {},
                     },
                 )
+                return []
+
+        if not self.settings.demand_real_sources_enabled:
+            all_signals.extend(execute_connector(self.connector_registry.synthetic, expanded["synthetic"]))
+        else:
+            google = self.connector_registry.google
+            firecrawl = self.connector_registry.firecrawl
+            google_signals: list[DemandRawSignal] = []
+
+            if google.is_configured(self.settings):
+                google_signals = execute_connector(google, expanded["google_custom_search"])
+                all_signals.extend(google_signals)
+            else:
+                record_skipped(google, "missing_api_key")
+
+            discovered_urls = [
+                signal.url for signal in google_signals if signal.url
+            ]
+            firecrawl_urls = list(dict.fromkeys([*expanded["firecrawl"], *discovered_urls]))
+            if firecrawl.is_configured(self.settings):
+                if firecrawl_urls:
+                    all_signals.extend(execute_connector(firecrawl, firecrawl_urls))
+                else:
+                    record_skipped(firecrawl, "no_urls")
+            else:
+                record_skipped(firecrawl, "missing_api_key")
+
+            if not all_signals and self.settings.demand_synthetic_fallback:
+                all_signals.extend(execute_connector(self.connector_registry.synthetic, expanded["synthetic"]))
 
         summary = {
             "real_sources_enabled": self.settings.demand_real_sources_enabled,
@@ -885,7 +982,18 @@ class DemandIntelligenceService:
             "failed_count": sum(1 for item in source_results if item.get("status") == "failed"),
             "skipped_count": sum(1 for item in source_results if item.get("status") == "skipped"),
             "collected_count": len(all_signals),
+            "real_signal_count": sum(1 for item in all_signals if item.connector_key != "synthetic"),
+            "synthetic_signal_count": sum(1 for item in all_signals if item.connector_key == "synthetic"),
         }
+        summary["evidence_status"] = (
+            "real"
+            if summary["real_signal_count"] and not summary["synthetic_signal_count"]
+            else "mixed"
+            if summary["real_signal_count"]
+            else "synthetic"
+            if summary["synthetic_signal_count"]
+            else "insufficient"
+        )
         return all_signals[: self.settings.demand_max_signals_per_run], summary
 
     def _normalize_signals(self, raw_signals: list[DemandRawSignal]) -> list[DemandNormalizedSignal]:
@@ -924,7 +1032,31 @@ class DemandIntelligenceService:
             )
         return normalized
 
-    def _extract_pains(self, normalized: list[DemandNormalizedSignal]) -> list[DemandExtractedItem]:
+    def _extract_pains(self, normalized: list[DemandNormalizedSignal], *, locale: str = "ja") -> list[DemandExtractedItem]:
+        if locale != "ja":
+            return self._extract_items(
+                normalized,
+                [
+                    ("Manual work takes too long", "Workload", ["manual", "takes too long", "time-consuming", "every time"]),
+                    ("Setup and onboarding are difficult", "Complexity", ["setup", "onboarding", "difficult to use", "complex"]),
+                    ("Value for money is unclear", "Cost", ["pricing", "expensive", "value is unclear", "cost"]),
+                    ("Results are difficult to explain", "Trust", ["evidence", "difficult to explain", "trust", "unclear results"]),
+                    ("Managing multiple tools is cumbersome", "Operations", ["multiple tools", "fragmented", "cumbersome", "workflow"]),
+                    ("Priorities are unclear", "Decision making", ["prioritize", "priority", "what to improve", "cannot decide"]),
+                ],
+                default_category="Other",
+            )
+        release_rules = [
+            ("手作業に時間がかかる", "作業負荷", ["手作業", "時間がかか", "毎回", "manual"]),
+            ("設定や導入が複雑", "複雑さ", ["設定", "複雑", "使い始め", "setup"]),
+            ("費用対効果が分かりにくい", "コスト", ["料金", "高い", "効果が分かり", "pricing"]),
+            ("結果の根拠を説明しにくい", "信頼性", ["根拠", "説明しにく", "信頼", "evidence"]),
+            ("複数ツールの運用が煩雑", "運用", ["複数", "煩雑", "まとめる", "workflow"]),
+            ("改善の優先順位が分からない", "意思決定", ["優先順位", "判断でき", "何を改善", "priorit"]),
+        ]
+        release_items = self._extract_items(normalized, release_rules, default_category="その他")
+        if release_items:
+            return release_items
         rules = [
             ("広告レポート作成が面倒", "レポート作成", ["レポート", "共有資料", "説明文"]),
             ("広告分析が難しい", "分析", ["分析", "CTR", "CVR", "改善"]),
@@ -935,7 +1067,29 @@ class DemandIntelligenceService:
         ]
         return self._extract_items(normalized, rules, default_category="その他")
 
-    def _extract_desires(self, normalized: list[DemandNormalizedSignal]) -> list[DemandExtractedItem]:
+    def _extract_desires(self, normalized: list[DemandNormalizedSignal], *, locale: str = "ja") -> list[DemandExtractedItem]:
+        if locale != "ja":
+            return self._extract_items(
+                normalized,
+                [
+                    ("Automate repetitive work", "Automation", ["automate", "automation"]),
+                    ("Start using it easily", "Ease of use", ["easy to use", "simple", "quick setup"]),
+                    ("Make evidence visible", "Visibility", ["evidence", "visibility", "explainable"]),
+                    ("Unify information in one place", "Integration", ["all-in-one", "integrate", "one place", "unify"]),
+                    ("Make decisions faster", "Speed", ["faster", "save time", "quickly", "speed"]),
+                ],
+                default_category="Improvement",
+            )
+        release_rules = [
+            ("作業を自動化したい", "自動化", ["自動化", "automation"]),
+            ("簡単に使い始めたい", "簡単さ", ["簡単", "すぐ使", "simple"]),
+            ("根拠を見える化したい", "可視化", ["根拠", "見える", "可視化", "evidence"]),
+            ("情報を一つにまとめたい", "統合", ["まとめ", "一つ", "統合", "all-in-one"]),
+            ("判断を速くしたい", "速度", ["速く", "時間短縮", "すぐ", "faster"]),
+        ]
+        release_items = self._extract_items(normalized, release_rules, default_category="改善")
+        if release_items:
+            return release_items
         rules = [
             ("広告レポートを自動化したい", "自動化したい", ["自動化", "レポート", "グラフ"]),
             ("広告分析を簡単にしたい", "簡単にしたい", ["簡単", "分かりません", "難しく"]),
@@ -957,7 +1111,7 @@ class DemandIntelligenceService:
             indexes = [
                 signal.raw_signal_index
                 for signal in normalized
-                if signal.quality_score > 0 and any(keyword in signal.normalized_text for keyword in keywords)
+                if signal.quality_score > 0 and any(keyword.lower() in signal.normalized_text.lower() for keyword in keywords)
             ]
             if not indexes:
                 continue
@@ -973,7 +1127,29 @@ class DemandIntelligenceService:
             )
         return items
 
-    def _extract_churn_reasons(self, normalized: list[DemandNormalizedSignal]) -> list[DemandExtractedItem]:
+    def _extract_churn_reasons(self, normalized: list[DemandNormalizedSignal], *, locale: str = "ja") -> list[DemandExtractedItem]:
+        if locale != "ja":
+            return self._extract_items(
+                normalized,
+                [
+                    ("Pricing is too high", "Cost", ["too expensive", "pricing", "high price", "cost"]),
+                    ("The product is difficult to use", "Complexity", ["difficult to use", "complex", "confusing"]),
+                    ("Setup takes too much effort", "Complexity", ["setup", "onboarding", "too much effort"]),
+                    ("The impact is unclear", "Trust", ["unclear impact", "unclear results", "no evidence"]),
+                    ("Support is insufficient", "Support", ["support is slow", "poor support", "insufficient support"]),
+                ],
+                default_category="Other",
+            )
+        release_rules = [
+            ("価格が高い", "コスト", ["高い", "料金", "price"]),
+            ("使い方が難しい", "複雑さ", ["難しい", "複雑", "分かりにく"]),
+            ("設定に手間がかかる", "複雑さ", ["設定", "導入", "手間"]),
+            ("効果が見えない", "信頼性", ["効果", "見えない", "根拠"]),
+            ("サポートが不足している", "サポート", ["サポート", "問い合わせ"]),
+        ]
+        release_items = self._extract_items(normalized, release_rules, default_category="その他")
+        if release_items:
+            return release_items
         rules = [
             ("高い", "コスト", ["高い", "価格"]),
             ("難しい", "複雑さ", ["難しい", "学習コスト", "使いこなす"]),
@@ -995,6 +1171,7 @@ class DemandIntelligenceService:
         normalized: list[DemandNormalizedSignal],
         pains: list[DemandExtractedItem],
         desires: list[DemandExtractedItem],
+        locale: str = "ja",
     ) -> list[DemandCluster]:
         clusters: list[DemandCluster] = []
         for cluster_type, items in [("pain", pains), ("desire", desires)]:
@@ -1006,7 +1183,11 @@ class DemandIntelligenceService:
                 ]
                 source_count = len(set(item.evidence_signal_indexes))
                 growth_rate = round(0.08 + source_count * 0.035 + index * 0.01, 3)
-                trend = "急増" if growth_rate >= 0.22 else "増加" if growth_rate >= 0.12 else "横ばい"
+                trend = (
+                    ("急増" if growth_rate >= 0.22 else "増加" if growth_rate >= 0.12 else "横ばい")
+                    if locale == "ja"
+                    else ("spike" if growth_rate >= 0.22 else "growing" if growth_rate >= 0.12 else "stable")
+                )
                 score = self._demand_score(count=len(item.evidence_signal_indexes), source_count=source_count, intensity=item.intensity, confidence=item.confidence)
                 clusters.append(
                     DemandCluster(
@@ -1019,8 +1200,8 @@ class DemandIntelligenceService:
                         representative_quotes=quotes,
                         growth_rate=growth_rate,
                         confidence=item.confidence,
-                        persona_ratios=self._persona_ratios(item.target_user),
-                        root_causes=self._root_causes(item.name),
+                        persona_ratios=self._persona_ratios(item.target_user, locale=locale),
+                        root_causes=self._root_causes(item.name, locale=locale),
                         demand_signal_score=score,
                         trend=trend,  # type: ignore[arg-type]
                         evidence_signal_indexes=item.evidence_signal_indexes,
@@ -1034,7 +1215,34 @@ class DemandIntelligenceService:
         query: str,
         normalized: list[DemandNormalizedSignal],
         churn_reasons: list[DemandExtractedItem],
+        locale: str = "ja",
     ) -> list[DemandCompetitor]:
+        if locale != "ja":
+            complaints = [item.name for item in churn_reasons] or ["Pricing is too high", "Setup takes too much effort"]
+            return [
+                DemandCompetitor(
+                    service_name=f"{query} Cloud",
+                    price="Subscription pricing may feel expensive for small teams.",
+                    main_features=["Data aggregation", "Report exports", "Dashboard"],
+                    strengths=["Channel data visibility", "Standard reports"],
+                    weaknesses=["Weak improvement recommendations", "Weak ad-to-LP alignment review"],
+                    reviews=[signal.normalized_text for signal in normalized[:2]],
+                    complaints=complaints[:4],
+                    rating=3.6,
+                    market_position="Operational visibility",
+                ),
+                DemandCompetitor(
+                    service_name=f"{query} Report Pro",
+                    price="Many useful features require a higher-tier plan.",
+                    main_features=["Report automation", "Shareable URLs", "Templates"],
+                    strengths=["Faster report creation", "Easy sharing"],
+                    weaknesses=["Shallow explanation of analysis", "Heavy setup"],
+                    reviews=[signal.normalized_text for signal in normalized[2:4]],
+                    complaints=complaints[:4],
+                    rating=3.8,
+                    market_position="Report automation",
+                ),
+            ]
         complaints = [item.name for item in churn_reasons] or ["高い", "設定が面倒"]
         return [
             DemandCompetitor(
@@ -1061,11 +1269,15 @@ class DemandIntelligenceService:
             ),
         ]
 
-    def _market_gaps(self, *, clusters: list[DemandCluster], competitors: list[DemandCompetitor]) -> list[dict[str, Any]]:
+    def _market_gaps(self, *, clusters: list[DemandCluster], competitors: list[DemandCompetitor], locale: str = "ja") -> list[dict[str, Any]]:
         competitor_weaknesses = [weakness for competitor in competitors for weakness in competitor.weaknesses]
         gaps: list[dict[str, Any]] = []
         for cluster in clusters[:6]:
-            unresolved = any("弱い" in weakness or "浅い" in weakness or "重い" in weakness for weakness in competitor_weaknesses)
+            unresolved = any(
+                marker in weakness.lower()
+                for weakness in competitor_weaknesses
+                for marker in (["弱い", "浅い", "重い"] if locale == "ja" else ["weak", "shallow", "heavy"])
+            )
             gap_score = min(100, cluster.demand_signal_score + (12 if unresolved else 0))
             gaps.append(
                 {
@@ -1078,7 +1290,20 @@ class DemandIntelligenceService:
             )
         return gaps
 
-    def _opportunities(self, *, gaps: list[dict[str, Any]]) -> list[DemandOpportunity]:
+    def _opportunities(self, *, gaps: list[dict[str, Any]], locale: str = "ja") -> list[DemandOpportunity]:
+        if locale != "ja":
+            return [
+                DemandOpportunity(
+                    name=f"Turn {gap['name']} into an improvement workflow",
+                    description="Connect market evidence to positioning, landing-page changes, and the next measurable test.",
+                    evidence=gap["evidence"],
+                    related_clusters=gap["related_clusters"],
+                    related_competitors=[],
+                    expected_value="Operators can decide what to improve next with clearer evidence.",
+                    risks=["Treat limited evidence as a hypothesis", "Do not claim guaranteed demand or success"],
+                )
+                for gap in gaps[:4]
+            ]
         return [
             DemandOpportunity(
                 name=f"{gap['name']}を広告改善ワークフローへ変換する",
@@ -1092,7 +1317,7 @@ class DemandIntelligenceService:
             for gap in gaps[:4]
         ]
 
-    def _feature_suggestions(self, *, opportunities: list[DemandOpportunity]) -> list[DemandFeatureSuggestion]:
+    def _feature_suggestions(self, *, opportunities: list[DemandOpportunity], locale: str = "ja") -> list[DemandFeatureSuggestion]:
         suggestions = [
             ("Evidence Explorer", "根拠投稿、レビュー、検索シグナルへ遡れる一覧", "high"),
             ("Demand Cluster Board", "不満・欲求クラスタをスコア順に比較する画面", "high"),
@@ -1100,6 +1325,18 @@ class DemandIntelligenceService:
             ("Ad/LP Appeal Generator", "需要シグナルを広告訴求とLP改善案へ変換する", "high"),
         ]
         solves = [opportunity.name for opportunity in opportunities]
+        if locale != "ja":
+            return [
+                DemandFeatureSuggestion(
+                    feature_name=name,
+                    solves=solves[:3],
+                    reason="Connect demand evidence to product and campaign decisions.",
+                    priority=priority,  # type: ignore[arg-type]
+                    mvp=f"Show {name} items, scores, and evidence links.",
+                    expansion=f"Add trends, filters, and exports to {name}.",
+                )
+                for name, _, priority in suggestions
+            ]
         return [
             DemandFeatureSuggestion(
                 feature_name=name,
@@ -1112,7 +1349,22 @@ class DemandIntelligenceService:
             for name, _, priority in suggestions
         ]
 
-    def _positioning(self, *, query: str, gaps: list[dict[str, Any]], competitors: list[DemandCompetitor]) -> DemandPositioning:
+    def _positioning(self, *, query: str, gaps: list[dict[str, Any]], competitors: list[DemandCompetitor], locale: str = "ja") -> DemandPositioning:
+        if locale != "ja":
+            return DemandPositioning(
+                recommended_position=f"Evidence-backed demand and campaign improvement for {query}",
+                differentiation_points=[
+                    "Turn public complaints and desires into testable positioning",
+                    "Review competitor gaps and landing-page changes together",
+                    "Trace recommendations back to evidence instead of relying on AI claims",
+                ],
+                competitor_comparison=[f"{competitor.service_name}: {', '.join(competitor.weaknesses)}" for competitor in competitors],
+                key_messages=[
+                    "Decide the next improvement from real market evidence.",
+                    "Make pains, desires, and competitor gaps visible.",
+                    "Connect demand evidence to ads and landing pages.",
+                ],
+            )
         return DemandPositioning(
             recommended_position=f"{query}向けの需要根拠つき広告改善OS",
             differentiation_points=[
@@ -1131,7 +1383,21 @@ class DemandIntelligenceService:
             ],
         )
 
-    def _ad_appeals(self, *, query: str, clusters: list[DemandCluster], positioning: DemandPositioning) -> list[DemandAdAppeal]:
+    def _ad_appeals(self, *, query: str, clusters: list[DemandCluster], positioning: DemandPositioning, locale: str = "ja") -> list[DemandAdAppeal]:
+        if locale != "ja":
+            top = clusters[0].name if clusters else "unclear campaign decisions"
+            return [
+                DemandAdAppeal(
+                    appeal_axis=top,
+                    hooks=[f"For teams struggling with {top}", "Are campaign decisions still based on guesswork?"],
+                    headlines=["Find campaign improvements from market evidence", f"Turn {query} complaints into testable messaging"],
+                    bodies=[
+                        "Structure public complaints, desires, and competitor gaps into ad and landing-page improvements.",
+                        "Trace every recommendation back to collected evidence instead of relying on AI conclusions alone.",
+                    ],
+                    ctas=["View demand signals", "Find improvement opportunities"],
+                ),
+            ]
         top = clusters[0].name if clusters else "広告改善の判断負荷"
         return [
             DemandAdAppeal(
@@ -1152,7 +1418,16 @@ class DemandIntelligenceService:
             ),
         ]
 
-    def _lp_context(self, *, clusters: list[DemandCluster], opportunities: list[DemandOpportunity]) -> DemandLPContext:
+    def _lp_context(self, *, clusters: list[DemandCluster], opportunities: list[DemandOpportunity], locale: str = "ja") -> DemandLPContext:
+        if locale != "ja":
+            top = clusters[0].name if clusters else "an unresolved market problem"
+            return DemandLPContext(
+                hero_improvements=[f"State a clear solution hypothesis for '{top}' in the hero"],
+                cta_improvements=["Use a CTA that invites users to inspect improvement opportunities"],
+                faq_ideas=["Does this guarantee demand?", "Can I inspect the underlying evidence?", "How are competitors compared?"],
+                section_ideas=["Top Demand Signals", "Evidence Explorer", "Competitor Gaps", "Recommended Features"],
+                structure_improvements=["Order the page as conclusion, evidence, opportunity, and next test"],
+            )
         top = clusters[0].name if clusters else "市場の未解決課題"
         return DemandLPContext(
             hero_improvements=[f"ヒーローで「{top}」への解決仮説を明示する"],
@@ -1245,7 +1520,11 @@ class DemandIntelligenceService:
                     {
                         "finding": cluster.name,
                         "evidence": "; ".join(cluster.representative_quotes[:2]),
-                        "recommendation": "広告訴求とLPファーストビューで根拠つき仮説として扱う",
+                        "recommendation": (
+                            "広告訴求とLPファーストビューで根拠つき仮説として扱う"
+                            if is_ja
+                            else "Treat this as an evidence-backed hypothesis for ad messaging and the LP hero."
+                        ),
                     }
                     for cluster in clusters[:4]
                 ],
@@ -1257,13 +1536,21 @@ class DemandIntelligenceService:
                     {
                         "finding": item.name,
                         "evidence": f"{len(item.evidence_signal_indexes)} signals",
-                        "recommendation": "広告の約束とLPの証拠が一致しているか確認する",
+                        "recommendation": (
+                            "広告の約束とLPの証拠が一致しているか確認する"
+                            if is_ja
+                            else "Check whether the ad promise matches the evidence on the landing page."
+                        ),
                     }
                     for item in pains[:4]
                 ],
                 "positioning_opportunities": positioning.key_messages,
                 "market_alignment_score": round(sum(cluster.demand_signal_score for cluster in clusters[:3]) / max(1, len(clusters[:3]))),
-                "market_fit_analysis": "需要シグナルは方向性の参考情報です。広告とLPの整合性、根拠提示、競合ギャップへの接続を確認してください。",
+                "market_fit_analysis": (
+                    "需要シグナルは方向性の参考情報です。広告とLPの整合性、根拠提示、競合ギャップへの接続を確認してください。"
+                    if is_ja
+                    else "Demand signals are directional evidence. Validate ad-to-LP alignment, proof, and competitor gaps before acting."
+                ),
                 "recommended_positioning": [positioning.recommended_position, *positioning.differentiation_points],
                 "market_opportunities": [opportunity.name for opportunity in opportunities],
                 "feature_suggestions": [feature.model_dump(mode="json") for feature in features],
@@ -1315,20 +1602,41 @@ class DemandIntelligenceService:
             return "マーケ担当"
         if "高い" in name:
             return "中小企業"
+        lower = name.lower()
+        if "report" in lower or "multiple tools" in lower:
+            return "Agency"
+        if "analysis" in lower or "priorit" in lower or "evidence" in lower:
+            return "Marketer"
+        if "pricing" in lower or "cost" in lower:
+            return "Small business"
         return "その他"
 
     @staticmethod
-    def _persona_ratios(primary: str) -> dict[str, float]:
-        ratios = {persona: 0.0 for persona in PERSONAS}
+    def _persona_ratios(primary: str, *, locale: str = "ja") -> dict[str, float]:
+        personas = PERSONAS if locale == "ja" else ["Solo builder", "Freelancer", "Agency", "Small business", "Enterprise", "Marketer", "Founder", "Engineer", "Designer", "Other"]
+        ratios = {persona: 0.0 for persona in personas}
+        if primary not in ratios:
+            primary = "その他" if locale == "ja" else "Other"
         ratios[primary] = 0.52
-        ratios["マーケ担当"] = max(ratios.get("マーケ担当", 0), 0.18)
-        ratios["広告代理店"] = max(ratios.get("広告代理店", 0), 0.16)
-        ratios["中小企業"] = max(ratios.get("中小企業", 0), 0.14)
+        marketer, agency, small = ("マーケ担当", "広告代理店", "中小企業") if locale == "ja" else ("Marketer", "Agency", "Small business")
+        ratios[marketer] = max(ratios.get(marketer, 0), 0.18)
+        ratios[agency] = max(ratios.get(agency, 0), 0.16)
+        ratios[small] = max(ratios.get(small, 0), 0.14)
         total = sum(ratios.values()) or 1
         return {key: round(value / total, 3) for key, value in ratios.items() if value > 0}
 
     @staticmethod
-    def _root_causes(name: str) -> list[str]:
+    def _root_causes(name: str, *, locale: str = "ja") -> list[str]:
+        if locale != "ja":
+            roots = {
+                "Manual work takes too long": ["Repeated data entry", "Manual formatting", "Fragmented data collection"],
+                "Setup and onboarding are difficult": ["Too many setup steps", "Complex permissions", "Slow time to value"],
+                "Value for money is unclear": ["Unclear outcomes", "Weak proof", "Pricing is difficult to justify"],
+                "Results are difficult to explain": ["Missing evidence", "Black-box recommendations", "Inconsistent reporting"],
+                "Managing multiple tools is cumbersome": ["Fragmented workflows", "Inconsistent metrics", "Context switching"],
+                "Priorities are unclear": ["No decision framework", "Competing recommendations", "Unclear expected impact"],
+            }
+            return roots.get(name, ["The workflow is fragmented", "Decision evidence is difficult to inspect"])
         roots = {
             "広告レポート作成が面倒": ["媒体ごとの数値転記", "グラフ作成", "説明文作成", "報告資料作成", "データ収集"],
             "広告分析が難しい": ["指標の意味理解", "改善優先度の判断", "広告とLPの関係整理", "過去施策との比較"],

@@ -122,6 +122,12 @@ class DemandDiscoveryInputRequest(BaseModel):
     locale: Literal["ja", "en"] = "ja"
 
 
+class DemandDiscoveryResearchRequest(BaseModel):
+    locale: Literal["ja", "en"] = "ja"
+    force: bool = False
+    source_urls: list[str] = Field(default_factory=list)
+
+
 class AdOptimizationAnalysisRunRequest(BaseModel):
     pair_id: str | None = None
     ai_mode: Literal["multi_provider", "openai_only"] = "openai_only"
@@ -367,6 +373,40 @@ def add_demand_discovery_message(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/demand-discovery/sessions/{session_id}/research")
+def run_demand_discovery_research(
+    session_id: str,
+    request: DemandDiscoveryResearchRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        _require_feature_credits(user_id=user_id, feature_key="demand_intelligence")
+        session, reused = _build_demand_discovery_service(load_settings()).run_research(
+            user_id=user_id,
+            session_id=session_id,
+            locale=request.locale,
+            force=request.force,
+            source_urls=request.source_urls,
+        )
+        if not reused:
+            _consume_feature_credits(
+                user_id=user_id,
+                feature_key="demand_intelligence",
+                metadata={
+                    "endpoint": f"/demand-discovery/sessions/{session_id}/research",
+                    "session_id": session_id,
+                    "run_id": session.get("latest_demand_run_id"),
+                },
+            )
+        return {"session": session, "reused": reused, "credits_consumed": 0 if reused else CREDIT_COSTS["demand_intelligence"].amount}
+    except ValueError as exc:
+        if "RESEARCH_ALREADY_RUNNING" in str(exc):
+            raise HTTPException(status_code=409, detail="Demand research is already running for these conditions.") from exc
+        if "RESEARCH_RATE_LIMITED" in str(exc):
+            raise HTTPException(status_code=429, detail="Too many demand research requests. Try again shortly.") from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/demand-discovery/analyze")
@@ -932,6 +972,7 @@ def _build_demand_discovery_service(settings: Settings) -> DemandDiscoveryServic
     return DemandDiscoveryService(
         repository=_repository_for_settings(settings),
         llm_client=_build_openai_llm_client(settings),
+        demand_intelligence_service=_build_demand_intelligence_service(settings),
     )
 
 

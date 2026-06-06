@@ -2,7 +2,8 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 
-import { PLANS, type BillingCurrency, type PlanId } from "@/lib/billing/plans";
+import { PLANS } from "@/lib/billing/plans";
+import { creditPackFromStripePrice, planFromStripePrice } from "@/lib/billing/stripe-catalog";
 import { getStripe } from "@/lib/stripe/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -12,28 +13,8 @@ function toIso(seconds?: number | null) {
   return seconds ? new Date(seconds * 1000).toISOString() : null;
 }
 
-function planFromPrice(priceId?: string | null): PlanId | null {
-  if (!priceId) return null;
-  if (
-    process.env.STRIPE_PRICE_PRO_MONTHLY === priceId ||
-    process.env.STRIPE_PRICE_PRO_MONTHLY_USD === priceId
-  ) {
-    return "growth";
-  }
-  for (const plan of Object.values(PLANS)) {
-    for (const currency of ["jpy", "usd"] satisfies BillingCurrency[]) {
-      const envKey = plan.prices[currency].stripePriceEnvKey;
-      if (envKey && process.env[envKey] === priceId) {
-        return plan.id;
-      }
-    }
-  }
-  return null;
-}
-
-function normalizePlanId(value?: string | null): PlanId {
-  if (value === "pro") return "growth";
-  return value && value in PLANS ? (value as PlanId) : "free";
+function assertSupabaseSuccess(error: { message: string } | null, operation: string) {
+  if (error) throw new Error(`${operation}: ${error.message}`);
 }
 
 async function upsertSubscriptionProfile(subscription: Stripe.Subscription, eventId?: string) {
@@ -43,11 +24,14 @@ async function upsertSubscriptionProfile(subscription: Stripe.Subscription, even
     current_period_start?: number | null;
     current_period_end?: number | null;
   };
-  const planId = planFromPrice(item?.price.id) ?? normalizePlanId(subscription.metadata.planId);
+  const planId = planFromStripePrice(item?.price.id);
+  if (!planId || planId === "free" || planId === "business") {
+    throw new Error("Subscription uses an unknown or non-billable plan price.");
+  }
   const userId = subscription.metadata.userId;
   if (!userId) return;
 
-  await supabase.from("user_billing_profiles").upsert(
+  const { error: profileError } = await supabase.from("user_billing_profiles").upsert(
     {
       user_id: userId,
       stripe_customer_id: String(subscription.customer),
@@ -59,15 +43,40 @@ async function upsertSubscriptionProfile(subscription: Stripe.Subscription, even
     },
     { onConflict: "user_id" },
   );
+  assertSupabaseSuccess(profileError, "Unable to update billing profile");
 
   if (eventId && (subscription.status === "active" || subscription.status === "trialing")) {
-    await supabase.rpc("grant_monthly_credits", {
+    const { error: creditError } = await supabase.rpc("grant_monthly_credits", {
       p_user_id: userId,
       p_amount: PLANS[planId].monthlyCredits,
       p_reason: "subscription_invoice_paid",
       p_stripe_event_id: eventId,
     });
+    assertSupabaseSuccess(creditError, "Unable to grant monthly credits");
   }
+}
+
+async function addCreditsFromCheckoutSession(session: Stripe.Checkout.Session, eventId: string) {
+  if (session.mode !== "payment" || session.payment_status !== "paid") return;
+  const userId = session.metadata?.userId;
+  if (!userId) throw new Error("Paid credit checkout is missing user metadata.");
+
+  const stripe = getStripe();
+  const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
+  const pack = creditPackFromStripePrice(lineItems.data[0]?.price?.id);
+  if (!pack) throw new Error("Checkout session uses an unknown credit pack price.");
+
+  const metadataCredits = Number(session.metadata?.credits || 0);
+  if (metadataCredits !== pack.credits) throw new Error("Checkout credit metadata does not match the configured price.");
+
+  const supabase = getSupabaseAdminClient();
+  const { error } = await supabase.rpc("add_purchased_credits", {
+    p_user_id: userId,
+    p_amount: pack.credits,
+    p_reason: pack.id,
+    p_stripe_event_id: eventId,
+  });
+  assertSupabaseSuccess(error, "Unable to add purchased credits");
 }
 
 export async function POST(request: Request) {
@@ -96,29 +105,15 @@ export async function POST(request: Request) {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     const userId = session.metadata?.userId;
-    if (session.mode === "payment" && userId) {
-      const credits = Number(session.metadata?.credits || 0);
-      if (credits > 0) {
-        await supabase.rpc("add_purchased_credits", {
-          p_user_id: userId,
-          p_amount: credits,
-          p_reason: session.metadata?.packId || "credit_pack_purchase",
-          p_stripe_event_id: event.id,
-        });
-      }
+    await addCreditsFromCheckoutSession(session, event.id);
+    if (session.mode === "subscription" && userId && typeof session.subscription === "string") {
+      const subscription = await stripe.subscriptions.retrieve(session.subscription);
+      await upsertSubscriptionProfile(subscription);
     }
-    if (session.mode === "subscription" && userId) {
-      await supabase.from("user_billing_profiles").upsert(
-        {
-          user_id: userId,
-          stripe_customer_id: String(session.customer),
-          stripe_subscription_id: String(session.subscription),
-          plan: normalizePlanId(session.metadata?.planId),
-          subscription_status: "active",
-        },
-        { onConflict: "user_id" },
-      );
-    }
+  }
+
+  if (event.type === "checkout.session.async_payment_succeeded") {
+    await addCreditsFromCheckoutSession(event.data.object as Stripe.Checkout.Session, event.id);
   }
 
   if (event.type === "customer.subscription.updated") {
@@ -128,9 +123,18 @@ export async function POST(request: Request) {
   if (event.type === "invoice.paid") {
     const invoice = event.data.object as Stripe.Invoice & {
       subscription?: string | Stripe.Subscription | null;
+      parent?: {
+        subscription_details?: {
+          subscription?: string | Stripe.Subscription | null;
+        } | null;
+      } | null;
     };
+    const parentSubscription = invoice.parent?.subscription_details?.subscription;
     const subscriptionId =
-      typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+      typeof invoice.subscription === "string"
+        ? invoice.subscription
+        : invoice.subscription?.id ||
+          (typeof parentSubscription === "string" ? parentSubscription : parentSubscription?.id);
     if (subscriptionId) {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       await upsertSubscriptionProfile(subscription, event.id);
@@ -146,7 +150,7 @@ export async function POST(request: Request) {
       .maybeSingle();
     const userId = (profile?.user_id || subscription.metadata.userId) as string | undefined;
     if (userId) {
-      await supabase.from("user_billing_profiles").upsert(
+      const { error: profileError } = await supabase.from("user_billing_profiles").upsert(
         {
           user_id: userId,
           stripe_customer_id: String(subscription.customer),
@@ -158,12 +162,14 @@ export async function POST(request: Request) {
         },
         { onConflict: "user_id" },
       );
-      await supabase.rpc("grant_monthly_credits", {
+      assertSupabaseSuccess(profileError, "Unable to cancel billing profile");
+      const { error: creditError } = await supabase.rpc("grant_monthly_credits", {
         p_user_id: userId,
         p_amount: PLANS.free.monthlyCredits,
         p_reason: "subscription_canceled_free_reset",
         p_stripe_event_id: event.id,
       });
+      assertSupabaseSuccess(creditError, "Unable to reset free credits");
     }
   }
 

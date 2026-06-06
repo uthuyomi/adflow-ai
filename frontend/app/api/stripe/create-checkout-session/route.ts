@@ -28,9 +28,18 @@ export async function POST(request: Request) {
   const supabase = getSupabaseAdminClient();
   const { data: profile } = await supabase
     .from("user_billing_profiles")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, stripe_subscription_id, subscription_status")
     .eq("user_id", user.id)
     .maybeSingle();
+  if (
+    profile?.stripe_subscription_id &&
+    ["active", "trialing", "past_due", "unpaid"].includes(profile.subscription_status)
+  ) {
+    return NextResponse.json(
+      { error: "An active subscription already exists. Use Manage billing to change your plan." },
+      { status: 409 },
+    );
+  }
 
   const stripe = getStripe();
   let customerId = profile?.stripe_customer_id as string | null | undefined;
@@ -40,7 +49,7 @@ export async function POST(request: Request) {
       metadata: { userId: user.id },
     });
     customerId = customer.id;
-    await supabase.from("user_billing_profiles").upsert(
+    const { error: profileError } = await supabase.from("user_billing_profiles").upsert(
       {
         user_id: user.id,
         stripe_customer_id: customerId,
@@ -49,12 +58,14 @@ export async function POST(request: Request) {
       },
       { onConflict: "user_id" },
     );
+    if (profileError) throw new Error(`Unable to save Stripe customer: ${profileError.message}`);
   }
 
   const appUrl = getAppUrl();
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
+    client_reference_id: user.id,
     line_items: [{ price, quantity: 1 }],
     success_url: `${appUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/pricing?canceled=1`,

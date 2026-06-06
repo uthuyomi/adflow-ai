@@ -11,6 +11,7 @@ class MarketSizeLayer:
         search_signals: list[dict[str, Any]],
         solution_fits: list[dict[str, Any]],
         competitor_gaps: list[dict[str, Any]],
+        locale: str = "ja",
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         search_by_keyword = {str(signal.get("keyword", "")).lower(): signal for signal in search_signals}
         gap_by_name = {str(gap.get("name", "")).lower(): gap for gap in competitor_gaps}
@@ -54,8 +55,8 @@ class MarketSizeLayer:
                     "market_size_score": round(market_score, 2),
                     "confidence": round(min(0.88, 0.28 + validation_score / 180 + source_diversity / 25), 3),
                     "assumptions": [
-                        "Audience range is an indicative band, not a factual market size assertion.",
-                        "Scores combine search demand, pain signals, validation, competitor gaps, and trend context.",
+                        "推定オーディエンス範囲は参考値であり、実際の市場規模を断定するものではありません。" if locale == "ja" else "Audience range is an indicative band, not a factual market size assertion.",
+                        "検索需要、不満シグナル、Validation、競合ギャップ、トレンドを組み合わせたスコアです。" if locale == "ja" else "Scores combine search demand, pain signals, validation, competitor gaps, and trend context.",
                     ],
                     "evidence": [
                         {"type": "cluster", "name": name, "score": pain_score},
@@ -69,7 +70,7 @@ class MarketSizeLayer:
             "market_size_score": round(sum(item["market_size_score"] for item in top[:5]) / max(1, len(top[:5])), 2),
             "promising_segments": [self._segment_summary(item) for item in top[:5] if item["market_size_score"] >= 55],
             "small_market_warnings": [
-                f"{item['segment_name']} may be a narrow segment based on current evidence."
+                (f"{item['segment_name']} は現在の根拠では小さいセグメントの可能性があります。" if locale == "ja" else f"{item['segment_name']} may be a narrow segment based on current evidence.")
                 for item in top
                 if item["market_size_score"] < 35
             ][:5],
@@ -82,7 +83,7 @@ class MarketSizeLayer:
                 }
                 for item in top[:8]
             ],
-            "guardrail": "Market size is a cautious estimate band, not a revenue forecast.",
+            "guardrail": "市場規模は慎重な参考レンジであり、売上予測ではありません。" if locale == "ja" else "Market size is a cautious estimate band, not a revenue forecast.",
         }
         return estimates, summary
 

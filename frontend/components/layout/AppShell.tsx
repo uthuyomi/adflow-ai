@@ -9,6 +9,7 @@ import { PublicFooter } from "@/components/layout/PublicFooter";
 import { PublicHeader } from "@/components/layout/PublicHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { UserPreferencesSync } from "@/components/settings/UserPreferencesSync";
+import { LegacyUiTranslationBridge } from "@/components/i18n/LegacyUiTranslationBridge";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -29,9 +30,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     pathname.startsWith("/legal") ||
     pathname.startsWith("/billing");
 
+  const bridge = <LegacyUiTranslationBridge />;
+
   if (isLogin) {
     return (
       <div className="min-h-screen bg-background">
+        {bridge}
         <AuthGate>{children}</AuthGate>
       </div>
     );
@@ -40,6 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (isPublic) {
     return (
       <div className="min-h-screen bg-background">
+        {bridge}
         <PublicHeader />
         <main>{children}</main>
         <PublicFooter />
@@ -49,6 +54,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      {bridge}
       <UserPreferencesSync />
       <Sidebar />
       <div className="lg:pl-72">

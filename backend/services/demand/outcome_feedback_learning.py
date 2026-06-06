@@ -11,6 +11,7 @@ class OutcomeFeedbackLearning:
         outcomes: list[dict[str, Any]],
         search_signals: list[dict[str, Any]],
         market_estimates: list[dict[str, Any]],
+        locale: str = "ja",
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         search_score = self._average([float(signal.get("search_demand_score") or 0) for signal in search_signals])
         market_by_name = {str(item.get("segment_name") or "").lower(): item for item in market_estimates}
@@ -35,7 +36,7 @@ class OutcomeFeedbackLearning:
                     "after_metrics": outcome.get("after_metrics") or {},
                     "metric_delta": metric_delta,
                     "learning_status": status,
-                    "learning_summary": self._summary_text(outcome, cluster, status),
+                    "learning_summary": self._summary_text(outcome, cluster, status, locale=locale),
                 },
             )
         summary = {
@@ -43,9 +44,9 @@ class OutcomeFeedbackLearning:
             "validated_demand_patterns": [link["learning_summary"] for link in links if link["learning_status"] == "positive"][:5],
             "failed_demand_patterns": [link["learning_summary"] for link in links if link["learning_status"] == "negative"][:5],
             "inconclusive_demand_patterns": [link["learning_summary"] for link in links if link["learning_status"] in {"neutral", "inconclusive", "unknown"}][:5],
-            "recommended_next_tests": self._next_tests(links, clusters),
+            "recommended_next_tests": self._next_tests(links, clusters, locale=locale),
             "linked_outcome_count": len(links),
-            "guardrail": "Outcome learning is historical feedback, not a guarantee that the same demand signal will perform again.",
+            "guardrail": "成果学習は過去のフィードバックであり、同じ需要シグナルの再現を保証しません。" if locale == "ja" else "Outcome learning is historical feedback, not a guarantee that the same demand signal will perform again.",
         }
         return links, summary
 
@@ -79,10 +80,10 @@ class OutcomeFeedbackLearning:
         return "neutral"
 
     @staticmethod
-    def _summary_text(outcome: dict[str, Any], cluster: dict[str, Any] | None, status: str) -> str:
-        cluster_name = (cluster or {}).get("name") or "unmatched demand cluster"
-        title = outcome.get("title") or "outcome"
-        return f"{title} linked to {cluster_name}: {status} feedback from measured outcome."
+    def _summary_text(outcome: dict[str, Any], cluster: dict[str, Any] | None, status: str, *, locale: str = "ja") -> str:
+        cluster_name = (cluster or {}).get("name") or ("未紐付け需要クラスター" if locale == "ja" else "unmatched demand cluster")
+        title = outcome.get("title") or ("成果" if locale == "ja" else "outcome")
+        return f"{title} を {cluster_name} に接続: 実測成果は {status}。" if locale == "ja" else f"{title} linked to {cluster_name}: {status} feedback from measured outcome."
 
     @staticmethod
     def _overview(links: list[dict[str, Any]]) -> dict[str, Any]:
@@ -94,14 +95,14 @@ class OutcomeFeedbackLearning:
         }
 
     @staticmethod
-    def _next_tests(links: list[dict[str, Any]], clusters: list[dict[str, Any]]) -> list[str]:
+    def _next_tests(links: list[dict[str, Any]], clusters: list[dict[str, Any]], *, locale: str = "ja") -> list[str]:
         negative_cluster_ids = {link.get("cluster_id") for link in links if link.get("learning_status") == "negative"}
         tests = []
         for cluster in clusters[:5]:
             if cluster.get("db_id") in negative_cluster_ids or cluster.get("id") in negative_cluster_ids:
-                tests.append(f"Retest {cluster.get('name')} with softer claim and clearer evidence.")
+                tests.append(f"{cluster.get('name')} を、控えめな表現と明確な根拠で再テストする。" if locale == "ja" else f"Retest {cluster.get('name')} with softer claim and clearer evidence.")
             else:
-                tests.append(f"Test ad/LP message around {cluster.get('name')} with evidence-backed copy.")
+                tests.append(f"{cluster.get('name')} を軸に、根拠つき広告・LPメッセージをテストする。" if locale == "ja" else f"Test ad/LP message around {cluster.get('name')} with evidence-backed copy.")
         return tests[:5]
 
     @staticmethod

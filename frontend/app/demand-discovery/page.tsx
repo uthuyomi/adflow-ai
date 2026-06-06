@@ -12,15 +12,18 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { Bot, Copy, HelpCircle, Loader2, PanelRight, Plus, Send, Sparkles, Square, UserRound, X } from "lucide-react";
+import { Bot, Copy, ExternalLink, HelpCircle, Loader2, PanelRight, Plus, RefreshCw, Search, Send, Sparkles, Square, UserRound, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/hooks/use-i18n";
 import {
   createDemandDiscoverySession,
+  runDemandDiscoveryResearch,
   sendDemandDiscoveryMessage,
   type DemandDiscoveryInsight,
   type DemandDiscoveryMessage,
+  type DemandResearchContext,
+  type DemandResearchStatus,
 } from "@/lib/api/product";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +42,8 @@ export default function DemandDiscoveryPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [insight, setInsight] = useState<DemandDiscoveryInsight | null>(null);
+  const [researchStatus, setResearchStatus] = useState<DemandResearchStatus>("conversation");
+  const [researchContext, setResearchContext] = useState<DemandResearchContext>({});
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHints, setShowHints] = useState(false);
@@ -71,6 +76,8 @@ export default function DemandDiscoveryPage() {
 
         setSessionId(result.id);
         setInsight(result.insight);
+        setResearchStatus(result.research_status);
+        setResearchContext(result.research_context);
         setMessages(
           result.messages.map((message, index) => ({
             ...message,
@@ -127,11 +134,44 @@ export default function DemandDiscoveryPage() {
     setSessionId(null);
     setMessages([]);
     setInsight(null);
+    setResearchStatus("conversation");
+    setResearchContext({});
     setError(null);
     setShowHints(false);
     setShowInsights(false);
     setIsRunning(false);
   };
+
+  const runResearch = useCallback(
+    async (force = false) => {
+      if (!sessionId || isRunning) return;
+      setError(null);
+      setIsRunning(true);
+      setResearchStatus("research_running");
+      const controller = new AbortController();
+      abortRef.current = controller;
+      try {
+        const result = await runDemandDiscoveryResearch(sessionId, { locale, force }, controller.signal);
+        setInsight(result.session.insight);
+        setResearchStatus(result.session.research_status);
+        setResearchContext(result.session.research_context);
+        setMessages(
+          result.session.messages.map((message, index) => ({
+            ...message,
+            id: `${result.session.id}-${index}`,
+          })),
+        );
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") return;
+        setResearchStatus("research_failed");
+        setError(caught instanceof Error ? caught.message : t("demandDiscovery.researchFailed"));
+      } finally {
+        abortRef.current = null;
+        setIsRunning(false);
+      }
+    },
+    [isRunning, locale, sessionId, t],
+  );
 
   return (
     <div className="relative -m-6 flex min-h-[calc(100vh-4rem)] flex-col bg-background">
@@ -162,6 +202,9 @@ export default function DemandDiscoveryPage() {
           insight={insight}
           isRunning={isRunning}
           onPrompt={sendText}
+          onResearch={runResearch}
+          researchContext={researchContext}
+          researchStatus={researchStatus}
           onToggleHints={() => setShowHints((current) => !current)}
           showHints={showHints}
         />
@@ -177,6 +220,9 @@ function AssistantThread({
   insight,
   isRunning,
   onPrompt,
+  onResearch,
+  researchContext,
+  researchStatus,
   onToggleHints,
   showHints,
 }: {
@@ -184,6 +230,9 @@ function AssistantThread({
   insight: DemandDiscoveryInsight | null;
   isRunning: boolean;
   onPrompt: (prompt: string) => void;
+  onResearch: (force?: boolean) => void;
+  researchContext: DemandResearchContext;
+  researchStatus: DemandResearchStatus;
   onToggleHints: () => void;
   showHints: boolean;
 }) {
@@ -216,6 +265,14 @@ function AssistantThread({
             </div>
           ) : null}
           {insight ? <CompactInsight insight={insight} /> : null}
+          {researchStatus !== "conversation" ? (
+            <ResearchPanel
+              context={researchContext}
+              disabled={isRunning}
+              onResearch={onResearch}
+              status={researchStatus}
+            />
+          ) : null}
         </div>
 
         <ThreadPrimitive.ViewportFooter className="sticky bottom-0 z-10 bg-background px-3 pb-4 pt-2">
@@ -357,6 +414,111 @@ function CompactInsight({ insight }: { insight: DemandDiscoveryInsight }) {
       </div>
       <p className="leading-6 text-muted-foreground">{insight.summary}</p>
     </div>
+  );
+}
+
+function ResearchPanel({
+  context,
+  disabled,
+  onResearch,
+  status,
+}: {
+  context: DemandResearchContext;
+  disabled: boolean;
+  onResearch: (force?: boolean) => void;
+  status: DemandResearchStatus;
+}) {
+  const { t } = useI18n();
+  const clusters = context.top_pain_clusters ?? [];
+  const hasResearch = status === "research_completed" && Boolean(context.run_id);
+  const sourceKind = context.source_kind ?? "none";
+  const sourceStatus = context.source_status as { failed_count?: number; skipped_count?: number } | undefined;
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-4 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 font-medium">
+            <Search className="h-4 w-4" />
+            {t("demandDiscovery.researchTitle")}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t(`demandDiscovery.researchStatus.${status}`)}
+          </p>
+        </div>
+        {hasResearch ? (
+          <Button disabled={disabled} onClick={() => onResearch(true)} size="sm" variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            {t("demandDiscovery.rerunResearch")}
+          </Button>
+        ) : (
+          <Button
+            disabled={disabled || status === "clarification_required" || status === "research_running"}
+            onClick={() => onResearch(false)}
+            size="sm"
+          >
+            {status === "research_running" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+            {t("demandDiscovery.runResearch")} · 50 credits
+          </Button>
+        )}
+      </div>
+
+      {hasResearch ? (
+        <div className="mt-4 space-y-4">
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-md border border-border px-2 py-1">
+              {t("demandDiscovery.sourceType")}: {t(`demandDiscovery.sourceKind.${sourceKind}`)}
+            </span>
+            <span className="rounded-md border border-border px-2 py-1">
+              {t("demandDiscovery.sourceCount")}: {context.source_count ?? 0}
+            </span>
+            <span className="rounded-md border border-border px-2 py-1">
+              {t("demandDiscovery.signalCount")}: {context.signal_count ?? 0}
+            </span>
+          </div>
+          {(sourceStatus?.failed_count ?? 0) > 0 || (sourceStatus?.skipped_count ?? 0) > 0 ? (
+            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {t("demandDiscovery.sourceWarning")}
+            </p>
+          ) : null}
+
+          {clusters.slice(0, 3).map((cluster, index) => (
+            <div className="rounded-lg bg-muted p-3" key={cluster.id ?? `${cluster.name}-${index}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium">{cluster.name || t("demandDiscovery.unknownPain")}</p>
+                <div className="flex gap-2 text-xs text-muted-foreground">
+                  <span>{t("demandDiscovery.demandScore")}: {Math.round(cluster.demand_signal_score ?? 0)}</span>
+                  <span>{t("demandDiscovery.validationScore")}: {Math.round(cluster.validation_score ?? 0)}</span>
+                </div>
+              </div>
+              {cluster.representative_quotes?.[0] ? (
+                <p className="mt-2 leading-6 text-muted-foreground">{cluster.representative_quotes[0]}</p>
+              ) : null}
+            </div>
+          ))}
+
+          {(context.evidence ?? []).filter((item) => item.url && !item.synthetic).slice(0, 4).length ? (
+            <div>
+              <p className="mb-2 font-medium">{t("demandDiscovery.evidenceLinks")}</p>
+              <div className="space-y-2">
+                {(context.evidence ?? []).filter((item) => item.url && !item.synthetic).slice(0, 4).map((item, index) => (
+                  <a
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    href={item.url ?? "#"}
+                    key={`${item.url}-${index}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span className="truncate">{item.title || item.source_name || item.url}</span>
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

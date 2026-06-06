@@ -22,8 +22,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Stripe customer is not available." }, { status: 400 });
   }
 
+  const configuration = process.env.STRIPE_BILLING_PORTAL_CONFIGURATION;
+  if (!configuration) {
+    return NextResponse.json({ error: "STRIPE_BILLING_PORTAL_CONFIGURATION is required." }, { status: 500 });
+  }
+
   const session = await getStripe().billingPortal.sessions.create({
     customer: profile.stripe_customer_id,
+    configuration,
     return_url: `${getAppUrl()}/pricing`,
   });
 

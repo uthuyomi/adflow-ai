@@ -12,6 +12,7 @@ class SignalValidationEngine:
         *,
         signals: list[dict[str, Any]],
         clusters: list[dict[str, Any]],
+        locale: str = "ja",
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         validations: list[dict[str, Any]] = []
         for cluster in clusters:
@@ -52,11 +53,11 @@ class SignalValidationEngine:
 
             warnings = []
             if source_diversity <= 1:
-                warnings.append("単一媒体に偏っているため、根拠の幅が限定的です")
+                warnings.append("単一媒体に偏っているため、根拠の幅が限定的です" if locale == "ja" else "Evidence is limited because it is concentrated in one source type.")
             if noise_ratio >= 0.45:
-                warnings.append("短文または文脈不足のシグナルが多く、信頼度は控えめです")
+                warnings.append("短文または文脈不足のシグナルが多く、信頼度は控えめです" if locale == "ja" else "Many signals are short or lack context, so confidence is limited.")
             if duplicate_ratio >= 0.35:
-                warnings.append("同一文脈の重複が多い可能性があります")
+                warnings.append("同一文脈の重複が多い可能性があります" if locale == "ja" else "The evidence may contain many duplicate or closely repeated contexts.")
 
             validation = DemandSignalValidation(
                 validation_score=round(validation_score, 2),
@@ -70,9 +71,9 @@ class SignalValidationEngine:
                 continuity_score=round(continuity_score, 2),
                 bias_warnings=warnings,
                 validation_reasons=[
-                    f"{source_diversity}種類のソースで確認",
-                    f"{len(evidence)}件の根拠シグナル",
-                    "需要断定ではなく信頼度評価として扱う",
+                    f"{source_diversity}種類のソースで確認" if locale == "ja" else f"Confirmed across {source_diversity} source types",
+                    f"{len(evidence)}件の根拠シグナル" if locale == "ja" else f"{len(evidence)} evidence signals",
+                    "需要断定ではなく信頼度評価として扱う" if locale == "ja" else "Treat this as evidence reliability, not a demand verdict",
                 ],
             )
             validations.append({

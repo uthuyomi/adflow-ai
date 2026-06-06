@@ -13,9 +13,10 @@ class SearchDemandLayer:
         clusters: list[dict[str, Any]],
         opportunities: list[Any],
         features: list[Any],
+        locale: str = "ja",
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        keywords = self._keywords(query=query, expanded_queries=expanded_queries, clusters=clusters, opportunities=opportunities, features=features)
-        signals = [self._signal(query=query, keyword=keyword, index=index) for index, keyword in enumerate(keywords[:20])]
+        keywords = self._keywords(query=query, expanded_queries=expanded_queries, clusters=clusters, opportunities=opportunities, features=features, locale=locale)
+        signals = [self._signal(query=query, keyword=keyword, index=index, locale=locale) for index, keyword in enumerate(keywords[:20])]
         top = sorted(signals, key=lambda item: item["search_demand_score"], reverse=True)[:8]
         low = [item for item in top if item["search_demand_score"] < 35]
         high = [item for item in top if item["search_demand_score"] >= 65]
@@ -31,14 +32,14 @@ class SearchDemandLayer:
                 for item in top
             ],
             "low_search_warning": [
-                f"{item['keyword']} has limited observed search demand signals; treat it as a hypothesis."
+                (f"{item['keyword']} の検索需要シグナルは限定的です。仮説として扱ってください。" if locale == "ja" else f"{item['keyword']} has limited observed search demand signals; treat it as a hypothesis.")
                 for item in low[:4]
             ],
             "high_search_opportunity": [
-                f"{item['keyword']} shows relatively stronger search demand signals."
+                (f"{item['keyword']} は比較的強い検索需要シグナルを示しています。" if locale == "ja" else f"{item['keyword']} shows relatively stronger search demand signals.")
                 for item in high[:4]
             ],
-            "guardrail": "Search demand is an indicative score, not a demand assertion or revenue forecast.",
+            "guardrail": "検索需要は参考スコアであり、需要断定や売上予測ではありません。" if locale == "ja" else "Search demand is an indicative score, not a demand assertion or revenue forecast.",
         }
         return signals, summary
 
@@ -50,6 +51,7 @@ class SearchDemandLayer:
         clusters: list[dict[str, Any]],
         opportunities: list[Any],
         features: list[Any],
+        locale: str = "ja",
     ) -> list[str]:
         raw: list[str] = [query]
         for values in expanded_queries.values():
@@ -57,10 +59,10 @@ class SearchDemandLayer:
         raw.extend(str(cluster.get("name") or "") for cluster in clusters)
         raw.extend(str(getattr(item, "name", "") or "") for item in opportunities)
         raw.extend(str(getattr(item, "feature_name", "") or "") for item in features)
-        raw.extend(f"{query} automation")
-        raw.extend(f"{query} comparison")
-        raw.extend(f"{query} review")
-        raw.extend(f"{query} alternative")
+        if locale == "ja":
+            raw.extend([f"{query} 自動化", f"{query} 比較", f"{query} 評判", f"{query} 代替"])
+        else:
+            raw.extend([f"{query} automation", f"{query} comparison", f"{query} review", f"{query} alternative"])
 
         seen: set[str] = set()
         keywords: list[str] = []
@@ -75,7 +77,7 @@ class SearchDemandLayer:
             keywords.append(keyword[:120])
         return keywords
 
-    def _signal(self, *, query: str, keyword: str, index: int) -> dict[str, Any]:
+    def _signal(self, *, query: str, keyword: str, index: int, locale: str = "ja") -> dict[str, Any]:
         tokens = [token for token in keyword.replace("/", " ").replace("_", " ").split() if token]
         token_score = min(35, len(tokens) * 7)
         intent_score = 0
@@ -83,9 +85,9 @@ class SearchDemandLayer:
         for marker in ["automation", "compare", "comparison", "review", "alternative", "tool", "lp", "広告", "自動化", "比較", "レビュー"]:
             if marker in lower:
                 intent_score += 8
-        related = self._related_keywords(keyword)
-        suggest = [f"{keyword} automation", f"{keyword} pricing", f"{keyword} reviews"][:3]
-        paa = [f"What problem does {keyword} solve?", f"How to evaluate {keyword}?"]
+        related = self._related_keywords(keyword, locale=locale)
+        suggest = ([f"{keyword} 自動化", f"{keyword} 料金", f"{keyword} 評判"] if locale == "ja" else [f"{keyword} automation", f"{keyword} pricing", f"{keyword} reviews"])[:3]
+        paa = [f"{keyword} はどんな課題を解決しますか？", f"{keyword} をどう評価しますか？"] if locale == "ja" else [f"What problem does {keyword} solve?", f"How to evaluate {keyword}?"]
         score = max(10, min(100, 28 + token_score + intent_score + min(20, len(related) * 3) - index))
         return {
             "query": query,
@@ -108,12 +110,11 @@ class SearchDemandLayer:
         }
 
     @staticmethod
-    def _related_keywords(keyword: str) -> list[str]:
+    def _related_keywords(keyword: str, *, locale: str = "ja") -> list[str]:
         words = [word for word, count in Counter(keyword.split()).items() if count >= 1]
         base = " ".join(words[:4]) or keyword
-        return [
-            f"{base} tool",
-            f"{base} workflow",
-            f"{base} automation",
-            f"{base} alternative",
-        ]
+        return (
+            [f"{base} ツール", f"{base} ワークフロー", f"{base} 自動化", f"{base} 代替"]
+            if locale == "ja"
+            else [f"{base} tool", f"{base} workflow", f"{base} automation", f"{base} alternative"]
+        )

@@ -32,6 +32,47 @@ export type DemandDiscoveryInsight = {
   nextActions: string[];
 };
 
+export type DemandResearchStatus =
+  | "conversation"
+  | "clarification_required"
+  | "research_recommended"
+  | "research_running"
+  | "research_completed"
+  | "research_failed";
+
+export type DemandResearchCluster = {
+  id?: string;
+  name?: string;
+  category?: string;
+  demand_signal_score?: number;
+  validation_score?: number;
+  source_count?: number;
+  representative_quotes?: string[];
+};
+
+export type DemandResearchContext = {
+  run_id?: string | null;
+  source_kind?: "real" | "synthetic" | "mixed" | "none";
+  top_pain_clusters?: DemandResearchCluster[];
+  top_desire_clusters?: DemandResearchCluster[];
+  validation_summary?: Record<string, unknown>;
+  competitor_gaps?: unknown[];
+  opportunities?: unknown[];
+  evidence?: Array<{
+    title?: string;
+    body?: string;
+    url?: string | null;
+    source_type?: string;
+    source_name?: string;
+    synthetic?: boolean;
+  }>;
+  source_status?: Record<string, unknown>;
+  signal_count?: number;
+  source_count?: number;
+  real_signal_count?: number;
+  synthetic_signal_count?: number;
+};
+
 export type DemandDiscoveryMessage = {
   role: "user" | "assistant";
   content: string;
@@ -42,6 +83,10 @@ export type DemandDiscoverySession = {
   title: string;
   messages: DemandDiscoveryMessage[];
   insight: DemandDiscoveryInsight | null;
+  latest_demand_run_id?: string | null;
+  research_status: DemandResearchStatus;
+  research_context: DemandResearchContext;
+  research_brief: Record<string, string>;
   created_at: string;
   updated_at: string;
 };
@@ -176,4 +221,19 @@ export async function sendDemandDiscoveryMessage(sessionId: string, input: strin
     body: JSON.stringify({ input, locale }),
     signal,
   });
+}
+
+export async function runDemandDiscoveryResearch(
+  sessionId: string,
+  payload: { locale?: Locale; force?: boolean; source_urls?: string[] } = {},
+  signal?: AbortSignal,
+) {
+  return requestWithAuth<{ session: DemandDiscoverySession; reused: boolean; credits_consumed: number }>(
+    `/demand-discovery/sessions/${sessionId}/research`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      signal,
+    },
+  );
 }

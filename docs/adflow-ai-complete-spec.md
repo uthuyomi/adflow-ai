@@ -958,6 +958,7 @@ Current limitation:
 
 - App 内部の一部管理画面には翻訳拡張余地が残る
 - 一部 backend generated Japanese text に文字化けが残っている
+- Demand Discovery Chat と Demand Intelligence の検索、Synthetic fallback、主要分析成果物は日本語 / 英語の両方に対応する
 
 ## 15. Pair Analysis Workflow
 
@@ -1202,10 +1203,11 @@ query、広告、LP から connector 別の検索語を作成し、実 source �
 
 ### Current Limitations
 
-- Reddit は本格 OAuth 検索未実装
-- YouTube コメント paging は限定的
-- Google Suggest / PAA の実取得は未実装
-- synthetic connector は実外部 source ではない
+- Google Custom Search で URL と検索スニペットを取得し、Firecrawl 設定時は上位 URL の本文を追加取得する
+- X / Reddit は直接 API の必須依存にせず、Google の `site:x.com` / `site:reddit.com` 検索を補助ソースとして扱う
+- Firecrawl 未設定または一部取得失敗時も、Google 検索結果のみで処理を継続する
+- YouTube コメント取得、Google Suggest / PAA の実取得は未実装
+- synthetic connector は実外部 source ではなく、実データが取れない場合のみ fallback として利用する
 
 ## 18. Signal Normalization Algorithm
 
@@ -1949,12 +1951,12 @@ DEMAND_EMBEDDING_PROVIDER=deterministic
 DEMAND_EMBEDDING_MODEL=deterministic-hash-embedding.v1
 
 X_API_BEARER_TOKEN=
-YOUTUBE_API_KEY=
 GOOGLE_CUSTOM_SEARCH_API_KEY=
 GOOGLE_CUSTOM_SEARCH_ENGINE_ID=
-REDDIT_CLIENT_ID=
-REDDIT_CLIENT_SECRET=
-REDDIT_USER_AGENT=
+FIRECRAWL_API_KEY=
+FIRECRAWL_MAX_URLS_PER_RUN=8
+FIRECRAWL_MAX_AGE_MS=172800000
+FIRECRAWL_TIMEOUT_MS=60000
 ```
 
 ## 33. Current Implementation Status

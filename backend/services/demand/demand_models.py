@@ -27,6 +27,7 @@ DemandSourceType = Literal[
     "review_site",
     "app_store_review",
     "google_play_review",
+    "synthetic",
 ]
 
 

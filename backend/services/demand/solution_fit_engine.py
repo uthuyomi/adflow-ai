@@ -22,7 +22,7 @@ class SolutionFitEngine:
             targets.append(("app_idea", solution_text))
         return [(target_type, text.strip()) for target_type, text in targets if text and text.strip()]
 
-    def evaluate(self, *, clusters: list[dict[str, Any]], targets: list[tuple[str, str]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    def evaluate(self, *, clusters: list[dict[str, Any]], targets: list[tuple[str, str]], locale: str = "ja") -> tuple[list[dict[str, Any]], dict[str, Any]]:
         fits: list[dict[str, Any]] = []
         for target_type, target_text in targets:
             target_tokens = _tokens(target_text)
@@ -46,7 +46,7 @@ class SolutionFitEngine:
                     confidence=min(0.95, 0.35 + fit_score / 140),
                     matched_pains=matched,
                     unmatched_pains=unmatched,
-                    recommended_adjustments=_adjustments(cluster, target_type, fit_score),
+                    recommended_adjustments=_adjustments(cluster, target_type, fit_score, locale=locale),
                     evidence_signal_ids=[str(value) for value in cluster.get("evidence_signal_ids", [])],
                 )
                 fits.append(fit.model_dump(mode="json"))
@@ -65,7 +65,11 @@ def _tokens(text: str) -> set[str]:
     return {token for token in text.replace("、", " ").replace("。", " ").replace("/", " ").split() if token}
 
 
-def _adjustments(cluster: dict[str, Any], target_type: str, fit_score: float) -> list[str]:
+def _adjustments(cluster: dict[str, Any], target_type: str, fit_score: float, *, locale: str = "ja") -> list[str]:
+    if locale != "ja":
+        if fit_score >= 60:
+            return [f"{target_type} has a reasonable fit with '{cluster.get('name')}'. Keep the message grounded in evidence."]
+        return [f"Strengthen the concrete solution context for '{cluster.get('name')}' in {target_type}."]
     if fit_score >= 60:
         return [f"{target_type} は「{cluster.get('name')}」に一定程度合っています。根拠つきで表現を維持してください。"]
     return [f"{target_type} で「{cluster.get('name')}」への具体的な解決文脈を強めてください。"]
