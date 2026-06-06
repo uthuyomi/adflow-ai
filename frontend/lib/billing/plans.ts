@@ -1,5 +1,5 @@
-export type PlanId = "free" | "starter" | "pro" | "business";
-export type CreditPackId = "credits_1000" | "credits_5000" | "credits_20000" | "credits_50000";
+export type PlanId = "free" | "starter" | "growth" | "business";
+export type CreditPackId = "credits_1000" | "credits_5000" | "credits_20000";
 export type BillingCurrency = "jpy" | "usd";
 
 type CurrencyPrice = {
@@ -14,6 +14,7 @@ export const PLANS: Record<
     name: string;
     prices: Record<BillingCurrency, CurrencyPrice>;
     monthlyCredits: number;
+    contactOnly?: boolean;
   }
 > = {
   free: {
@@ -23,34 +24,35 @@ export const PLANS: Record<
       jpy: { amount: 0 },
       usd: { amount: 0 },
     },
-    monthlyCredits: 100,
+    monthlyCredits: 500,
   },
   starter: {
     id: "starter",
     name: "Starter",
     prices: {
-      jpy: { amount: 4980, stripePriceEnvKey: "STRIPE_PRICE_STARTER_MONTHLY" },
-      usd: { amount: 39, stripePriceEnvKey: "STRIPE_PRICE_STARTER_MONTHLY_USD" },
+      jpy: { amount: 2980, stripePriceEnvKey: "STRIPE_PRICE_STARTER_MONTHLY" },
+      usd: { amount: 24, stripePriceEnvKey: "STRIPE_PRICE_STARTER_MONTHLY_USD" },
     },
-    monthlyCredits: 3000,
+    monthlyCredits: 2500,
   },
-  pro: {
-    id: "pro",
-    name: "Pro",
+  growth: {
+    id: "growth",
+    name: "Growth",
     prices: {
-      jpy: { amount: 14800, stripePriceEnvKey: "STRIPE_PRICE_PRO_MONTHLY" },
-      usd: { amount: 119, stripePriceEnvKey: "STRIPE_PRICE_PRO_MONTHLY_USD" },
+      jpy: { amount: 6980, stripePriceEnvKey: "STRIPE_PRICE_GROWTH_MONTHLY" },
+      usd: { amount: 55, stripePriceEnvKey: "STRIPE_PRICE_GROWTH_MONTHLY_USD" },
     },
-    monthlyCredits: 12000,
+    monthlyCredits: 8000,
   },
   business: {
     id: "business",
     name: "Business",
     prices: {
-      jpy: { amount: 49800, stripePriceEnvKey: "STRIPE_PRICE_BUSINESS_MONTHLY" },
-      usd: { amount: 399, stripePriceEnvKey: "STRIPE_PRICE_BUSINESS_MONTHLY_USD" },
+      jpy: { amount: 0 },
+      usd: { amount: 0 },
     },
-    monthlyCredits: 50000,
+    monthlyCredits: 0,
+    contactOnly: true,
   },
 };
 
@@ -67,8 +69,8 @@ export const CREDIT_PACKS: Record<
     id: "credits_1000",
     name: "1,000 Credits",
     prices: {
-      jpy: { amount: 1000, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_1000" },
-      usd: { amount: 8, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_1000_USD" },
+      jpy: { amount: 1980, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_1000" },
+      usd: { amount: 16, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_1000_USD" },
     },
     credits: 1000,
   },
@@ -76,8 +78,8 @@ export const CREDIT_PACKS: Record<
     id: "credits_5000",
     name: "5,000 Credits",
     prices: {
-      jpy: { amount: 4500, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_5000" },
-      usd: { amount: 36, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_5000_USD" },
+      jpy: { amount: 7900, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_5000" },
+      usd: { amount: 63, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_5000_USD" },
     },
     credits: 5000,
   },
@@ -85,19 +87,10 @@ export const CREDIT_PACKS: Record<
     id: "credits_20000",
     name: "20,000 Credits",
     prices: {
-      jpy: { amount: 16000, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_20000" },
-      usd: { amount: 129, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_20000_USD" },
+      jpy: { amount: 25800, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_20000" },
+      usd: { amount: 205, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_20000_USD" },
     },
     credits: 20000,
-  },
-  credits_50000: {
-    id: "credits_50000",
-    name: "50,000 Credits",
-    prices: {
-      jpy: { amount: 35000, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_50000" },
-      usd: { amount: 279, stripePriceEnvKey: "STRIPE_PRICE_CREDIT_50000_USD" },
-    },
-    credits: 50000,
   },
 };
 

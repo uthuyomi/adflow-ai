@@ -1,8 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BrainCircuit, KeyRound, Save } from "lucide-react";
-import type { ReactNode } from "react";
+import { Languages, Save, UserRound } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import type { z } from "zod";
@@ -11,15 +11,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useI18n } from "@/hooks/use-i18n";
+import { useUserPreferences } from "@/hooks/use-user-preferences";
+import type { Locale } from "@/lib/i18n";
 import { SettingsSchema } from "@/lib/schemas";
 import { getApiBaseUrl } from "@/lib/api/client";
-import { useUiStore, type AnalysisAIMode } from "@/lib/store";
+import type { AnalysisAIMode } from "@/lib/store";
 
 type SettingsValues = z.infer<typeof SettingsSchema>;
 
 export function SettingsForm() {
-  const analysisAIMode = useUiStore((state) => state.analysisAIMode);
-  const setAnalysisAIMode = useUiStore((state) => state.setAnalysisAIMode);
+  const { t } = useI18n();
+  const { preferences, savePreferences, isLoading: preferencesLoading } = useUserPreferences();
+  const [personalLocale, setPersonalLocale] = useState<Locale>(preferences.locale);
+  const [personalAIMode, setPersonalAIMode] = useState<AnalysisAIMode>(preferences.analysisAIMode);
+  const [savingPreferences, setSavingPreferences] = useState(false);
   const form = useForm<SettingsValues>({
     resolver: zodResolver(SettingsSchema),
     defaultValues: {
@@ -31,32 +37,65 @@ export function SettingsForm() {
     },
   });
 
+  useEffect(() => {
+    setPersonalLocale(preferences.locale);
+    setPersonalAIMode(preferences.analysisAIMode);
+  }, [preferences.analysisAIMode, preferences.locale]);
+
+  const handleSavePreferences = async () => {
+    setSavingPreferences(true);
+    try {
+      await savePreferences({ locale: personalLocale, analysisAIMode: personalAIMode });
+      toast.success(t("settings.personal.saved"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Personal settings could not be saved.");
+    } finally {
+      setSavingPreferences(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Account AI settings</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <UserRound className="h-5 w-5" />
+            {t("settings.personal.title")}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="inline-flex rounded-md border border-border bg-background p-1">
-            <ModeButton
-              active={analysisAIMode === "openai_only"}
-              icon={<KeyRound className="mr-2 h-4 w-4" />}
-              label="OpenAI only"
-              mode="openai_only"
-              onSelect={setAnalysisAIMode}
-            />
-            <ModeButton
-              active={analysisAIMode === "multi_provider"}
-              icon={<BrainCircuit className="mr-2 h-4 w-4" />}
-              label="Multi AI"
-              mode="multi_provider"
-              onSelect={setAnalysisAIMode}
-            />
+        <CardContent className="grid gap-5 md:grid-cols-2">
+          <Field label={t("common.language")}>
+            <div className="relative">
+              <Languages className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <select
+                className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm"
+                onChange={(event) => setPersonalLocale(event.target.value as Locale)}
+                value={personalLocale}
+              >
+                <option value="ja">日本語</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </Field>
+          <Field label={t("settings.personal.aiMode")}>
+            <select
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              onChange={(event) => setPersonalAIMode(event.target.value as AnalysisAIMode)}
+              value={personalAIMode}
+            >
+              <option value="openai_only">OpenAI only</option>
+              <option value="multi_provider">Multi AI</option>
+            </select>
+          </Field>
+          <div className="md:col-span-2">
+            <p className="mb-4 text-sm leading-6 text-muted-foreground">
+              {t("settings.personal.description")}
+            </p>
+            <Button disabled={preferencesLoading || savingPreferences} onClick={handleSavePreferences} type="button">
+              <Save className="mr-2 h-4 w-4" />
+              {savingPreferences ? t("settings.personal.saving") : t("settings.personal.save")}
+            </Button>
           </div>
-          <p className="text-sm leading-6 text-muted-foreground">
-            This account setting controls pair analysis. OpenAI only is the default; Multi AI routes work across specialized providers.
-          </p>
         </CardContent>
       </Card>
 
@@ -101,32 +140,6 @@ export function SettingsForm() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function ModeButton({
-  active,
-  icon,
-  label,
-  mode,
-  onSelect,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  label: string;
-  mode: AnalysisAIMode;
-  onSelect: (mode: AnalysisAIMode) => void;
-}) {
-  return (
-    <Button
-      className="h-9 px-3"
-      onClick={() => onSelect(mode)}
-      type="button"
-      variant={active ? "secondary" : "ghost"}
-    >
-      {icon}
-      {label}
-    </Button>
   );
 }
 

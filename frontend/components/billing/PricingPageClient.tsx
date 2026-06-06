@@ -12,8 +12,8 @@ import { useI18n } from "@/hooks/use-i18n";
 
 const creditUsage = [
   { key: "pricing.usage.demand", credits: 50 },
-  { key: "pricing.usage.competitor", credits: 100 },
-  { key: "pricing.usage.pair", credits: 150 },
+  { key: "pricing.usage.pair", credits: 80 },
+  { key: "pricing.usage.fit", credits: 120 },
   { key: "pricing.usage.workflow", credits: 300 },
 ] as const;
 
@@ -81,7 +81,7 @@ export function PricingPageClient() {
             <div className="p-3">{t("pricing.table.feature")}</div>
             <div className="p-3">Free</div>
             <div className="p-3">Starter</div>
-            <div className="p-3">Pro</div>
+            <div className="p-3">Growth</div>
             <div className="p-3">Business</div>
           </div>
           {comparisonRows.map((row) => (

@@ -2,12 +2,10 @@
 
 import { Bell, CheckCircle2, ChevronDown, Menu, RefreshCw, Search } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { signOut } from "@/lib/auth";
 import { useI18n } from "@/hooks/use-i18n";
 import { useUiStore } from "@/lib/store";
 
@@ -31,18 +29,9 @@ export function Header() {
   const pathname = usePathname();
   const setSidebarOpen = useUiStore((state) => state.setSidebarOpen);
   const project = useUiStore((state) => state.selectedProject);
-  const { locale, setLocale, t } = useI18n();
+  const { t } = useI18n();
   const root = `/${pathname.split("/")[1]}`;
   const current = t(labels[pathname] ?? labels[root] ?? "common.workspace");
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      toast.success(t("common.logoutSuccess"));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("common.logoutFailed"));
-    }
-  };
-
   return (
     <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur md:px-6">
       <div className="flex min-w-0 items-center gap-4">
@@ -79,23 +68,12 @@ export function Header() {
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
           {t("common.synced")}
         </Badge>
-        <Button
-          aria-label={t("common.language")}
-          onClick={() => setLocale(locale === "ja" ? "en" : "ja")}
-          size="sm"
-          variant="outline"
-        >
-          {locale === "ja" ? t("common.english") : t("common.japanese")}
-        </Button>
         <Button variant="outline" size="sm">
           <RefreshCw className="mr-2 h-4 w-4" />
           {t("common.sync")}
         </Button>
         <Button variant="ghost" size="icon" aria-label="Notifications">
           <Bell className="h-5 w-5" />
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleSignOut}>
-          {t("common.logout")}
         </Button>
       </div>
     </header>

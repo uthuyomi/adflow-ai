@@ -1055,14 +1055,14 @@ def _build_orchestrator(settings: Settings) -> AIOrchestrator:
 def _build_llm_client(settings: Settings) -> DeterministicLLMClient | OpenAIJSONClient:
     if settings.ai_provider == "openai":
         if settings.openai_model is None:
-            raise ValueError("OPENAI_MODEL is required.")
+            raise ValueError("OPENAI_FAST_MODEL or OPENAI_MODEL is required.")
         return OpenAIJSONClient(model=settings.openai_model)
 
     return DeterministicLLMClient()
 
 
 def _build_openai_llm_client(settings: Settings) -> OpenAIJSONClient | None:
-    model = os.getenv("OPENAI_FAST_MODEL") or settings.openai_model
+    model = settings.openai_model
     if not model or not os.getenv("OPENAI_API_KEY"):
         return None
     return OpenAIJSONClient(model=model)

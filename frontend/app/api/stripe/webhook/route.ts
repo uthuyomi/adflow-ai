@@ -14,6 +14,12 @@ function toIso(seconds?: number | null) {
 
 function planFromPrice(priceId?: string | null): PlanId | null {
   if (!priceId) return null;
+  if (
+    process.env.STRIPE_PRICE_PRO_MONTHLY === priceId ||
+    process.env.STRIPE_PRICE_PRO_MONTHLY_USD === priceId
+  ) {
+    return "growth";
+  }
   for (const plan of Object.values(PLANS)) {
     for (const currency of ["jpy", "usd"] satisfies BillingCurrency[]) {
       const envKey = plan.prices[currency].stripePriceEnvKey;
@@ -25,6 +31,11 @@ function planFromPrice(priceId?: string | null): PlanId | null {
   return null;
 }
 
+function normalizePlanId(value?: string | null): PlanId {
+  if (value === "pro") return "growth";
+  return value && value in PLANS ? (value as PlanId) : "free";
+}
+
 async function upsertSubscriptionProfile(subscription: Stripe.Subscription, eventId?: string) {
   const supabase = getSupabaseAdminClient();
   const item = subscription.items.data[0];
@@ -32,7 +43,7 @@ async function upsertSubscriptionProfile(subscription: Stripe.Subscription, even
     current_period_start?: number | null;
     current_period_end?: number | null;
   };
-  const planId = planFromPrice(item?.price.id) ?? (subscription.metadata.planId as PlanId | undefined) ?? "free";
+  const planId = planFromPrice(item?.price.id) ?? normalizePlanId(subscription.metadata.planId);
   const userId = subscription.metadata.userId;
   if (!userId) return;
 
@@ -102,7 +113,7 @@ export async function POST(request: Request) {
           user_id: userId,
           stripe_customer_id: String(session.customer),
           stripe_subscription_id: String(session.subscription),
-          plan: session.metadata?.planId || "free",
+          plan: normalizePlanId(session.metadata?.planId),
           subscription_status: "active",
         },
         { onConflict: "user_id" },

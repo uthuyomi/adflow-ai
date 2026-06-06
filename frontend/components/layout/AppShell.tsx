@@ -8,6 +8,7 @@ import { Header } from "@/components/layout/Header";
 import { PublicFooter } from "@/components/layout/PublicFooter";
 import { PublicHeader } from "@/components/layout/PublicHeader";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { UserPreferencesSync } from "@/components/settings/UserPreferencesSync";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -48,6 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
+      <UserPreferencesSync />
       <Sidebar />
       <div className="lg:pl-72">
         <Header />

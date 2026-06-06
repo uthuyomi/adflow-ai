@@ -13,6 +13,7 @@ class Settings(BaseModel):
     github_provider: Literal["memory", "github"] = "memory"
     storage_provider: Literal["memory", "supabase"] = "memory"
     openai_model: str | None = None
+    openai_deep_model: str | None = None
     github_repository: str | None = None
     github_token: str | None = None
     supabase_url: str | None = None
@@ -46,7 +47,7 @@ class Settings(BaseModel):
             if not os.getenv("OPENAI_API_KEY"):
                 raise ValueError("OPENAI_API_KEY is required when ADFLOW_AI_PROVIDER=openai.")
             if not self.openai_model:
-                raise ValueError("OPENAI_MODEL is required when ADFLOW_AI_PROVIDER=openai.")
+                raise ValueError("OPENAI_FAST_MODEL or OPENAI_MODEL is required when ADFLOW_AI_PROVIDER=openai.")
 
         if self.github_provider == "github":
             if not self.github_token:
@@ -73,7 +74,8 @@ def load_settings() -> Settings:
         ai_provider=os.getenv("ADFLOW_AI_PROVIDER", "mock"),
         github_provider=os.getenv("ADFLOW_GITHUB_PROVIDER", "memory"),
         storage_provider=os.getenv("ADFLOW_STORAGE_PROVIDER", "memory"),
-        openai_model=os.getenv("OPENAI_MODEL"),
+        openai_model=os.getenv("OPENAI_FAST_MODEL") or os.getenv("OPENAI_MODEL"),
+        openai_deep_model=os.getenv("OPENAI_DEEP_MODEL"),
         github_repository=os.getenv("GITHUB_REPOSITORY"),
         github_token=os.getenv("GITHUB_TOKEN"),
         supabase_url=os.getenv("SUPABASE_URL"),

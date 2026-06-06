@@ -41,6 +41,10 @@ export function PricingCards({ currency }: { currency: BillingCurrency }) {
   const { t } = useI18n();
 
   const startCheckout = async (planId: PlanId) => {
+    if (planId === "business") {
+      window.location.href = "/contact";
+      return;
+    }
     if (planId === "free") {
       window.location.href = user ? "/dashboard" : "/login";
       return;
@@ -57,7 +61,7 @@ export function PricingCards({ currency }: { currency: BillingCurrency }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {Object.values(PLANS).map((plan) => {
-        const highlighted = plan.id === "pro";
+        const highlighted = plan.id === "growth";
         const price = plan.prices[currency].amount;
         return (
           <Card key={plan.id} className={cn("flex flex-col", highlighted && "border-primary shadow-lg")}>
@@ -71,8 +75,10 @@ export function PricingCards({ currency }: { currency: BillingCurrency }) {
                 ) : null}
               </div>
               <div className="pt-3">
-                <span className="text-2xl font-semibold">{formatBillingAmount(price, currency)}</span>
-                <span className="text-sm text-muted-foreground"> {t("pricing.perMonth")}</span>
+                <span className="text-2xl font-semibold">
+                  {plan.contactOnly ? t("pricing.contactSales") : formatBillingAmount(price, currency)}
+                </span>
+                {!plan.contactOnly ? <span className="text-sm text-muted-foreground"> {t("pricing.perMonth")}</span> : null}
               </div>
               <p className="text-sm leading-6 text-muted-foreground">{t(`pricing.plan.${plan.id}.description`)}</p>
             </CardHeader>
@@ -87,7 +93,11 @@ export function PricingCards({ currency }: { currency: BillingCurrency }) {
               </div>
               <Button className="mt-6 w-full" onClick={() => startCheckout(plan.id)} variant={highlighted ? "default" : "outline"}>
                 <CreditCard className="mr-2 h-4 w-4" />
-                {plan.id === "free" ? t("pricing.startFree") : t("pricing.choosePlan")}
+                {plan.id === "free"
+                  ? t("pricing.startFree")
+                  : plan.contactOnly
+                    ? t("pricing.contactSales")
+                    : t("pricing.choosePlan")}
               </Button>
             </CardContent>
           </Card>

@@ -148,7 +148,7 @@ class RegisteredPairAnalysisService:
         if ai_mode not in {"multi_provider", "openai_only"}:
             raise ValueError("Invalid ai_mode.")
         if ai_mode == "openai_only" and self.openai_llm_client is None:
-            raise ValueError("OPENAI_API_KEY and OPENAI_MODEL are required for openai_only analysis.")
+            raise ValueError("OPENAI_API_KEY and OPENAI_FAST_MODEL or OPENAI_MODEL are required for openai_only analysis.")
         pair = self.repository.get_one("ad_lp_pairs", user_id=user_id, filters={"id": pair_id})
         twitter_ad = self.repository.get_one(
             "twitter_ads",

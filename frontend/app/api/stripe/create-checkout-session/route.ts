@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   const currency = body?.currency === "usd" ? "usd" : "jpy";
   const plan = body?.planId ? PLANS[body.planId] : null;
   const priceEnvKey = plan ? getPriceEnvKey(plan, currency) : undefined;
-  if (!plan || plan.id === "free" || !priceEnvKey) {
+  if (!plan || plan.id === "free" || plan.contactOnly || !priceEnvKey) {
     return NextResponse.json({ error: "Invalid subscription plan." }, { status: 400 });
   }
 

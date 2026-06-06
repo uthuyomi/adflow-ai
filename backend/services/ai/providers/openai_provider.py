@@ -30,7 +30,7 @@ class OpenAIProvider:
         strict_openai = user_payload.get("ai_mode") == "openai_only"
         if not self.is_configured() or response_model is None or self.model is None:
             if strict_openai:
-                raise ValueError("OPENAI_API_KEY and OPENAI_MODEL are required for OpenAI-only orchestration.")
+                raise ValueError("OPENAI_API_KEY and OPENAI_FAST_MODEL or OPENAI_MODEL are required for OpenAI-only orchestration.")
             return self.fallback.generate_structured(
                 system_prompt=system_prompt,
                 user_payload={**user_payload, "provider": self.provider_key},
