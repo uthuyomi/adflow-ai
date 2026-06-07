@@ -59,7 +59,7 @@ export function PricingPageClient() {
               <div className="rounded-md border border-border bg-background p-4" key={item.key}>
                 <div className="text-sm text-muted-foreground">{t(item.key)}</div>
                 <div className="mt-2 text-2xl font-semibold">{item.credits}</div>
-                <div className="text-xs text-muted-foreground">credits</div>
+                <div className="text-xs text-muted-foreground">{t("pricing.credits")}</div>
               </div>
             ))}
           </div>
@@ -79,10 +79,10 @@ export function PricingPageClient() {
         <div className="mt-5 overflow-hidden rounded-lg border border-border">
           <div className="grid grid-cols-[1.2fr_repeat(4,1fr)] bg-muted text-sm font-semibold">
             <div className="p-3">{t("pricing.table.feature")}</div>
-            <div className="p-3">Free</div>
-            <div className="p-3">Starter</div>
-            <div className="p-3">Growth</div>
-            <div className="p-3">Business</div>
+            <div className="p-3">{t("pricing.plan.free")}</div>
+            <div className="p-3">{t("pricing.plan.starter")}</div>
+            <div className="p-3">{t("pricing.plan.growth")}</div>
+            <div className="p-3">{t("pricing.plan.business")}</div>
           </div>
           {comparisonRows.map((row) => (
             <div className="grid grid-cols-[1.2fr_repeat(4,1fr)] border-t border-border text-sm" key={row[0]}>

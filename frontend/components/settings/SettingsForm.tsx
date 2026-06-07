@@ -1,24 +1,16 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Languages, Save, UserRound } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import type { z } from "zod";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import type { Locale } from "@/lib/i18n";
-import { SettingsSchema } from "@/lib/schemas";
-import { getApiBaseUrl } from "@/lib/api/client";
 import type { AnalysisAIMode } from "@/lib/store";
-
-type SettingsValues = z.infer<typeof SettingsSchema>;
 
 export function SettingsForm() {
   const { t } = useI18n();
@@ -26,16 +18,6 @@ export function SettingsForm() {
   const [personalLocale, setPersonalLocale] = useState<Locale>(preferences.locale);
   const [personalAIMode, setPersonalAIMode] = useState<AnalysisAIMode>(preferences.analysisAIMode);
   const [savingPreferences, setSavingPreferences] = useState(false);
-  const form = useForm<SettingsValues>({
-    resolver: zodResolver(SettingsSchema),
-    defaultValues: {
-      apiBaseUrl: getApiBaseUrl(),
-      githubRepository: "owner/repo",
-      supabaseProject: "adflow-prod",
-      xAdsStatus: "pending",
-      analysisSchedule: "Every weekday 09:00",
-    },
-  });
 
   useEffect(() => {
     setPersonalLocale(preferences.locale);
@@ -48,7 +30,7 @@ export function SettingsForm() {
       await savePreferences({ locale: personalLocale, analysisAIMode: personalAIMode });
       toast.success(t("settings.personal.saved"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Personal settings could not be saved.");
+      toast.error(error instanceof Error ? error.message : t("settings.personal.saveFailed"));
     } finally {
       setSavingPreferences(false);
     }
@@ -72,7 +54,7 @@ export function SettingsForm() {
                 onChange={(event) => setPersonalLocale(event.target.value as Locale)}
                 value={personalLocale}
               >
-                <option value="ja">日本語</option>
+                <option value="ja">{t("common.japanese")}</option>
                 <option value="en">English</option>
               </select>
             </div>
@@ -99,46 +81,6 @@ export function SettingsForm() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Connection settings</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="grid gap-5 md:grid-cols-2"
-            onSubmit={form.handleSubmit(() => toast.success("Settings validated locally."))}
-          >
-            <Field label="Backend API URL" error={form.formState.errors.apiBaseUrl?.message}>
-              <Input {...form.register("apiBaseUrl")} />
-            </Field>
-            <Field label="GitHub repository" error={form.formState.errors.githubRepository?.message}>
-              <Input {...form.register("githubRepository")} />
-            </Field>
-            <Field label="Supabase project" error={form.formState.errors.supabaseProject?.message}>
-              <Input {...form.register("supabaseProject")} />
-            </Field>
-            <Field label="X Ads connection status" error={form.formState.errors.xAdsStatus?.message}>
-              <select
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                {...form.register("xAdsStatus")}
-              >
-                <option value="connected">Connected</option>
-                <option value="pending">Pending</option>
-                <option value="not_connected">Not connected</option>
-              </select>
-            </Field>
-            <Field label="Analysis schedule" error={form.formState.errors.analysisSchedule?.message}>
-              <Input {...form.register("analysisSchedule")} />
-            </Field>
-            <div className="flex items-end">
-              <Button type="submit">
-                <Save className="mr-2 h-4 w-4" />
-                Save settings
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -88,7 +88,7 @@ export default function AdOptimizationProjectPage() {
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="overview">{t("adOptimization.tabOverview")}</TabsTrigger>
           <TabsTrigger value="assets">{t("adOptimization.tabAssets")}</TabsTrigger>
-          <TabsTrigger value="ab-tests">A/B Tests</TabsTrigger>
+          <TabsTrigger value="ab-tests">{t("abTests.title")}</TabsTrigger>
           <TabsTrigger value="x-ads">{t("xAds.tab")}</TabsTrigger>
           <TabsTrigger value="analysis">{t("adOptimization.tabAnalysis")}</TabsTrigger>
           <TabsTrigger value="recommendations">{t("adOptimization.tabRecommendations")}</TabsTrigger>
@@ -150,17 +150,17 @@ export default function AdOptimizationProjectPage() {
             onCreate={async (payload) => {
               try {
                 await abTestMutations.create.mutateAsync(payload);
-                toast.success("A/B test created.");
+                toast.success(t("abTests.created"));
               } catch (caught) {
-                toast.error(caught instanceof Error ? caught.message : "A/B test creation failed.");
+                toast.error(caught instanceof Error ? caught.message : t("abTests.createFailed"));
               }
             }}
             onStatus={async (testId, status) => {
               try {
                 await abTestMutations.updateStatus.mutateAsync({ testId, status });
-                toast.success("A/B test status updated.");
+                toast.success(t("abTests.updated"));
               } catch (caught) {
-                toast.error(caught instanceof Error ? caught.message : "A/B test update failed.");
+                toast.error(caught instanceof Error ? caught.message : t("abTests.updateFailed"));
               }
             }}
             tests={abTests.data ?? []}
@@ -321,6 +321,7 @@ function ABTestsPanel({
   onCreate: (payload: { name: string; hypothesis: string | null; primary_metric: "ctr" | "cvr" | "cpc"; ad_ids: string[] }) => Promise<void>;
   onStatus: (testId: string, status: AdABTest["status"]) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [hypothesis, setHypothesis] = useState("");
   const [metric, setMetric] = useState<"ctr" | "cvr" | "cpc">("ctr");
@@ -334,24 +335,24 @@ function ABTestsPanel({
     <div className="space-y-4">
       {error ? (
         <Card className="border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-          A/B test storage is not available yet. Apply migration <code>202606060001_ad_ab_tests.sql</code> to Supabase.
+          {t("abTests.storageUnavailable")} <code>202606060001_ad_ab_tests.sql</code>
         </Card>
       ) : null}
       <Card>
         <CardHeader>
-          <CardTitle>Create an ad A/B test</CardTitle>
+          <CardTitle>{t("abTests.createTitle")}</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Select two or more ads from this project. Current registered metrics are used for a directional comparison.
+            {t("abTests.createDescription")}
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-1 text-sm">
-              <span className="font-medium">Test name</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="LP promise angle test" />
+              <span className="font-medium">{t("abTests.name")}</span>
+              <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("abTests.namePlaceholder")} />
             </label>
             <label className="space-y-1 text-sm">
-              <span className="font-medium">Primary metric</span>
+              <span className="font-medium">{t("abTests.primaryMetric")}</span>
               <select
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={metric}
@@ -364,11 +365,11 @@ function ABTestsPanel({
             </label>
           </div>
           <label className="space-y-1 text-sm">
-            <span className="font-medium">Hypothesis</span>
+            <span className="font-medium">{t("abTests.hypothesis")}</span>
             <Textarea
               value={hypothesis}
               onChange={(event) => setHypothesis(event.target.value)}
-              placeholder="A narrower promise will improve qualified clicks."
+              placeholder={t("abTests.hypothesisPlaceholder")}
             />
           </label>
           <div className="grid gap-2 md:grid-cols-2">
@@ -399,7 +400,7 @@ function ABTestsPanel({
               type="button"
             >
               <FlaskConical className="mr-2 h-4 w-4" />
-              Create A/B test
+              {t("abTests.create")}
             </Button>
           </div>
         </CardContent>
@@ -408,7 +409,7 @@ function ABTestsPanel({
       {tests.length ? (
         tests.map((test) => <ABTestCard disabled={isUpdating} key={test.id} onStatus={onStatus} test={test} />)
       ) : (
-        <EmptyState title="No A/B tests" description="Create a test after registering at least two ads in this project." />
+        <EmptyState title={t("abTests.emptyTitle")} description={t("abTests.emptyDescription")} />
       )}
     </div>
   );
@@ -423,6 +424,7 @@ function ABTestCard({
   disabled: boolean;
   onStatus: (testId: string, status: AdABTest["status"]) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const formatMetric = (value: number) => test.primary_metric === "cpc" ? value.toFixed(2) : `${value.toFixed(2)}%`;
   return (
     <Card>
@@ -450,15 +452,15 @@ function ABTestCard({
           <div className="flex items-start gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3">
             <Trophy className="mt-0.5 h-4 w-4 text-emerald-600" />
             <div>
-              <div className="font-medium">Provisional winner: Variant {test.provisional_winner.label}</div>
+              <div className="font-medium">{t("abTests.provisionalWinner")}: {t("abTests.variant")} {test.provisional_winner.label}</div>
               <div className="text-sm text-muted-foreground">{test.note}</div>
             </div>
           </div>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2">
-          {test.status === "draft" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "running")} size="sm">Start test</Button> : null}
-          {test.status === "running" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "completed")} size="sm">Complete test</Button> : null}
-          {test.status !== "archived" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "archived")} size="sm" variant="outline">Archive</Button> : null}
+          {test.status === "draft" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "running")} size="sm">{t("abTests.start")}</Button> : null}
+          {test.status === "running" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "completed")} size="sm">{t("abTests.complete")}</Button> : null}
+          {test.status !== "archived" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "archived")} size="sm" variant="outline">{t("abTests.archive")}</Button> : null}
         </div>
       </CardContent>
     </Card>

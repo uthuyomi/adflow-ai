@@ -27,12 +27,16 @@ const allowedLiteralPatterns = [
 
 const files = scanRoots.flatMap((directory) => walk(path.join(root, directory)));
 const violations = [];
+const mojibakePatterns = [/縺/, /繧/, /譁/, /譛/, /蠎/, /蜿/, /荳/];
 
 for (const file of files) {
   if (!/\.(tsx|ts)$/.test(file) || ignoredFiles.has(path.basename(file))) continue;
   const relative = path.relative(root, file).replaceAll("\\", "/");
   if (relative.split("/").some((segment) => ignoredSegments.has(segment))) continue;
   const source = fs.readFileSync(file, "utf8");
+  if (mojibakePatterns.some((pattern) => pattern.test(source))) {
+    violations.push(`${relative}: contains likely mojibake`);
+  }
   const lines = source.split(/\r?\n/);
   lines.forEach((line, index) => {
     if (line.includes("i18n-audit-ignore")) return;
@@ -46,6 +50,9 @@ for (const file of files) {
 
 const enKeys = dictionaryKeys(path.join(root, "locales/en.ts"));
 const jaSource = fs.readFileSync(path.join(root, "locales/ja.ts"), "utf8");
+if (mojibakePatterns.some((pattern) => pattern.test(jaSource))) {
+  violations.push("locales/ja.ts: contains likely mojibake");
+}
 const jaOverrides = new Set([...jaSource.matchAll(/^\s*"([^"]+)"\s*:/gm)].map((match) => match[1]));
 const demandKeys = [...enKeys].filter((key) => key.startsWith("demandDiscovery."));
 const missingDemandOverrides = demandKeys.filter((key) => !jaOverrides.has(key));

@@ -127,7 +127,7 @@ export function Sidebar() {
       {sidebarOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
           <button
-            aria-label="Close navigation"
+            aria-label={t("sidebar.closeNavigation")}
             className="absolute inset-0 bg-slate-950/60"
             onClick={() => setSidebarOpen(false)}
             type="button"
@@ -135,7 +135,7 @@ export function Sidebar() {
           <div className="relative h-full">
             {sidebar}
             <Button
-              aria-label="Close navigation"
+              aria-label={t("sidebar.closeNavigation")}
               className="absolute right-3 top-3"
               onClick={() => setSidebarOpen(false)}
               size="icon"

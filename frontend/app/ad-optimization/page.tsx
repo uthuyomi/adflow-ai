@@ -187,6 +187,7 @@ function AssetImportPanel({
   projects: AdProject[];
   onImported: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [projectId, setProjectId] = useState("");
   const [lpUrl, setLpUrl] = useState("");
   const [csvText, setCsvText] = useState(sampleCsv);
@@ -209,9 +210,9 @@ function AssetImportPanel({
               });
       setLastResult(result);
       await onImported();
-      toast.success("Import completed.");
+      toast.success(t("adOptimization.importCompleted"));
     } catch (caught) {
-      toast.error(caught instanceof Error ? caught.message : "Import failed.");
+      toast.error(caught instanceof Error ? caught.message : t("adOptimization.importFailed"));
     } finally {
       setIsPending(null);
     }
@@ -222,24 +223,24 @@ function AssetImportPanel({
       <CardHeader>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <CardTitle>Import ads and landing pages</CardTitle>
+            <CardTitle>{t("adOptimization.importTitle")}</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Fetch LP content from a URL, import ad CSV rows, and automatically create ad-LP pairs.
+              {t("adOptimization.importDescription")}
             </p>
           </div>
-          <Badge variant="secondary">X Ads only, Google later</Badge>
+          <Badge variant="secondary">{t("adOptimization.importScope")}</Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-[1fr_2fr]">
           <label className="space-y-1 text-sm">
-            <span className="font-medium">Project</span>
+            <span className="font-medium">{t("adOptimization.importProject")}</span>
             <select
               className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
             >
-              <option value="">No project / use row project_id</option>
+              <option value="">{t("adOptimization.importNoProject")}</option>
               {projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -249,7 +250,7 @@ function AssetImportPanel({
           </label>
           <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <label className="space-y-1 text-sm">
-              <span className="font-medium">LP URL</span>
+              <span className="font-medium">{t("adOptimization.importLpUrl")}</span>
               <Input
                 value={lpUrl}
                 onChange={(event) => setLpUrl(event.target.value)}
@@ -264,14 +265,14 @@ function AssetImportPanel({
               variant="outline"
             >
               {isPending === "lp" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <LinkIcon className="mr-2 h-4 w-4" />}
-              Fetch LP
+              {t("adOptimization.importFetchLp")}
             </Button>
           </div>
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
           <label className="space-y-1 text-sm">
-            <span className="font-medium">Ad CSV</span>
+            <span className="font-medium">{t("adOptimization.importAdCsv")}</span>
             <Textarea
               className="min-h-32 font-mono text-xs"
               value={csvText}
@@ -285,7 +286,7 @@ function AssetImportPanel({
             type="button"
           >
             {isPending === "csv" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Import CSV and pair
+            {t("adOptimization.importCsv")}
           </Button>
         </div>
 
@@ -296,23 +297,24 @@ function AssetImportPanel({
 }
 
 function ImportResult({ result }: { result: AssetImportSummary }) {
+  const { t } = useI18n();
   const summary = result.summary;
   return (
     <div className="grid gap-2 rounded-md border border-border bg-muted/30 p-3 text-sm sm:grid-cols-4">
       <div>
-        <div className="text-muted-foreground">Ads</div>
+        <div className="text-muted-foreground">{t("adOptimization.ads")}</div>
         <div className="font-semibold">{summary?.ads ?? (result.landing_page ? 0 : "-")}</div>
       </div>
       <div>
-        <div className="text-muted-foreground">LPs</div>
+        <div className="text-muted-foreground">{t("adOptimization.landingPages")}</div>
         <div className="font-semibold">{summary?.landing_pages ?? (result.landing_page ? 1 : "-")}</div>
       </div>
       <div>
-        <div className="text-muted-foreground">Pairs</div>
+        <div className="text-muted-foreground">{t("adOptimization.analysisTargets")}</div>
         <div className="font-semibold">{summary?.pairs ?? "-"}</div>
       </div>
       <div>
-        <div className="text-muted-foreground">Errors</div>
+        <div className="text-muted-foreground">{t("adOptimization.importErrors")}</div>
         <div className="font-semibold">{summary?.errors ?? result.errors?.length ?? 0}</div>
       </div>
     </div>
@@ -368,7 +370,7 @@ function ProjectRow({
 }
 
 const sampleCsv = `name,campaign_name,headline,body,cta,destination_url,impressions,clicks,conversions,spend,status
-Meeting AI Ad A,launch-test,AIで議事録を自動整理,録音から要点とTODOを自動作成します,無料で試す,https://example.com,10000,300,12,15000,active`;
+Meeting AI Ad A,launch-test,Turn meetings into clear actions,Create summaries and action items from recordings,Try free,https://example.com,10000,300,12,15000,active`;
 
 function Step({ done, href, label }: { done: boolean; href: string; label: string }) {
   return (
