@@ -432,7 +432,17 @@ function ResearchPanel({
   const clusters = context.top_pain_clusters ?? [];
   const hasResearch = status === "research_completed" && Boolean(context.run_id);
   const sourceKind = context.source_kind ?? "none";
-  const sourceStatus = context.source_status as { failed_count?: number; skipped_count?: number } | undefined;
+  const sourceStatus = context.source_status as {
+    failed_count?: number;
+    skipped_count?: number;
+    sources?: Array<{
+      status?: string;
+      collected_count?: number;
+      connector_key?: string;
+      metadata?: { connector_key?: string };
+    }>;
+  } | undefined;
+  const sourceRuns = sourceStatus?.sources ?? [];
 
   return (
     <section className="rounded-2xl border border-border bg-card p-4 text-sm">
@@ -476,6 +486,19 @@ function ResearchPanel({
               {t("demandDiscovery.signalCount")}: {context.signal_count ?? 0}
             </span>
           </div>
+          {sourceRuns.length ? (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {sourceRuns.map((source, index) => {
+                const connectorKey = source.connector_key ?? source.metadata?.connector_key ?? "unknown";
+                const labelKey = `demandDiscovery.connector.${connectorKey}`;
+                return (
+                  <span className="rounded-md bg-muted px-2 py-1 text-muted-foreground" key={`${connectorKey}-${index}`}>
+                    {t(labelKey)}: {source.status ?? "unknown"} · {source.collected_count ?? 0}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
           {(sourceStatus?.failed_count ?? 0) > 0 || (sourceStatus?.skipped_count ?? 0) > 0 ? (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               {t("demandDiscovery.sourceWarning")}

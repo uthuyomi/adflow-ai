@@ -1203,9 +1203,11 @@ query、広告、LP から connector 別の検索語を作成し、実 source �
 
 ### Current Limitations
 
-- Google Custom Search で URL と検索スニペットを取得し、Firecrawl 設定時は上位 URL の本文を追加取得する
+- Google Custom Search は登録済みドメインを重点検索する
+- Firecrawl Search はウェブ全体から競合 LP、FAQ、比較記事、レビュー候補 URL と検索スニペットを取得する
+- Google Custom Search と Firecrawl Search の発見 URL を重複排除し、優先度の高い URL のみ Firecrawl Scrape で本文取得する
 - X / Reddit は直接 API の必須依存にせず、Google の `site:x.com` / `site:reddit.com` 検索を補助ソースとして扱う
-- Firecrawl 未設定または一部取得失敗時も、Google 検索結果のみで処理を継続する
+- Google または Firecrawl の片方が未設定・取得失敗でも、利用可能な実ソースだけで処理を継続する
 - YouTube コメント取得、Google Suggest / PAA の実取得は未実装
 - synthetic connector は実外部 source ではなく、実データが取れない場合のみ fallback として利用する
 
@@ -1954,6 +1956,10 @@ X_API_BEARER_TOKEN=
 GOOGLE_CUSTOM_SEARCH_API_KEY=
 GOOGLE_CUSTOM_SEARCH_ENGINE_ID=
 FIRECRAWL_API_KEY=
+FIRECRAWL_SEARCH_ENABLED=true
+FIRECRAWL_SEARCH_MAX_QUERIES=4
+FIRECRAWL_SEARCH_RESULTS_PER_QUERY=10
+FIRECRAWL_SEARCH_MAX_RESULTS_PER_RUN=30
 FIRECRAWL_MAX_URLS_PER_RUN=8
 FIRECRAWL_MAX_AGE_MS=172800000
 FIRECRAWL_TIMEOUT_MS=60000

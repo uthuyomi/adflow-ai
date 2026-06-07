@@ -6,9 +6,10 @@ from unittest.mock import Mock, patch
 from backend.core.config import Settings
 from backend.services.demand.connectors.connector_registry import DemandConnectorRegistry
 from backend.services.demand.connectors.firecrawl_connector import FirecrawlDemandConnector
+from backend.services.demand.connectors.firecrawl_search_connector import FirecrawlSearchDemandConnector
 from backend.services.demand.connectors.google_search_connector import GoogleSearchDemandConnector
 from backend.services.demand.connectors.synthetic_connector import SyntheticDemandConnector
-from backend.services.demand.demand_intelligence_service import DemandIntelligenceService
+from backend.services.demand.demand_intelligence_service import DemandIntelligenceService, _unique_urls
 from backend.services.demand.demand_models import DemandConnectorRequest, DemandConnectorResponse, DemandRawSignal
 from backend.services.demand.search_demand_layer import SearchDemandLayer
 from backend.services.demand.signal_validation_engine import SignalValidationEngine
@@ -66,8 +67,10 @@ class DemandDiscoveryResearchTests(unittest.TestCase):
             source_urls=["https://example.com/reviews"],
         )
         google_queries = " ".join(result["google_custom_search"])
+        firecrawl_queries = " ".join(result["firecrawl_search"])
         self.assertIn("site:reddit.com", google_queries)
         self.assertIn("site:x.com", google_queries)
+        self.assertIn("広告レポート 不満", firecrawl_queries)
         self.assertEqual(result["firecrawl"], ["https://example.com/reviews"])
         self.assertNotIn("reddit", result)
         self.assertNotIn("x", result)
@@ -80,9 +83,12 @@ class DemandDiscoveryResearchTests(unittest.TestCase):
         self.assertIn("complaints", en)
         self.assertNotIn("不満", en)
 
-    def test_connector_registry_only_uses_google_and_firecrawl_as_real_sources(self) -> None:
+    def test_connector_registry_uses_google_firecrawl_search_and_scrape_as_real_sources(self) -> None:
         connectors = DemandConnectorRegistry(Settings(demand_real_sources_enabled=True)).real_connectors
-        self.assertEqual([connector.connector_key for connector in connectors], ["google_custom_search", "firecrawl"])
+        self.assertEqual(
+            [connector.connector_key for connector in connectors],
+            ["google_custom_search", "firecrawl_search", "firecrawl"],
+        )
 
     @patch("backend.services.demand.connectors.google_search_connector.requests.get")
     def test_google_connector_returns_discovered_urls(self, get: Mock) -> None:
@@ -110,6 +116,62 @@ class DemandDiscoveryResearchTests(unittest.TestCase):
             DemandConnectorRequest(query="test", expanded_queries=["https://example.com"]),
         )
         self.assertEqual(response.status, "skipped")
+
+    @patch("backend.services.demand.connectors.firecrawl_search_connector.validate_public_http_url")
+    @patch("backend.services.demand.connectors.firecrawl_search_connector.requests.post")
+    def test_firecrawl_search_discovers_and_classifies_web_results(self, post: Mock, validate: Mock) -> None:
+        validate.return_value = "https://example.com/reviews"
+        post.return_value.raise_for_status.return_value = None
+        post.return_value.json.return_value = {
+            "success": True,
+            "data": {
+                "web": [
+                    {
+                        "url": "https://example.com/reviews",
+                        "title": "Product reviews",
+                        "description": "Users report that setup is difficult.",
+                        "position": 1,
+                    },
+                ],
+            },
+        }
+        connector = FirecrawlSearchDemandConnector(
+            Settings(
+                firecrawl_api_key="key",
+                firecrawl_search_max_queries=1,
+                firecrawl_search_max_results_per_run=10,
+            ),
+        )
+        response = connector.collect(
+            DemandConnectorRequest(query="ad reporting", expanded_queries=["ad reporting reviews"], max_results=10),
+        )
+        self.assertEqual(response.status, "completed")
+        self.assertEqual(response.signals[0].connector_key, "firecrawl_search")
+        self.assertEqual(response.signals[0].source_type, "review_site")
+        self.assertEqual(response.signals[0].url, "https://example.com/reviews")
+
+    def test_firecrawl_search_can_be_disabled(self) -> None:
+        response = FirecrawlSearchDemandConnector(
+            Settings(firecrawl_api_key="key", firecrawl_search_enabled=False),
+        ).collect(DemandConnectorRequest(query="test"))
+        self.assertEqual(response.status, "skipped")
+        self.assertEqual(response.metadata["reason"], "disabled")
+
+    def test_discovered_urls_remove_fragments_and_tracking_duplicates(self) -> None:
+        urls = _unique_urls(
+            [
+                "https://example.com/reviews?utm_source=google#top",
+                "https://example.com/reviews/",
+                "https://example.com/reviews?category=saas",
+            ],
+        )
+        self.assertEqual(
+            urls,
+            [
+                "https://example.com/reviews?utm_source=google#top",
+                "https://example.com/reviews?category=saas",
+            ],
+        )
 
     @patch("backend.services.demand.connectors.firecrawl_connector.requests.post")
     def test_firecrawl_returns_real_classified_content(self, post: Mock) -> None:
@@ -225,7 +287,61 @@ class DemandDiscoveryResearchTests(unittest.TestCase):
         )
         self.assertEqual([signal.connector_key for signal in signals], ["google_custom_search"])
         self.assertEqual(summary["evidence_status"], "real")
-        self.assertEqual(summary["skipped_count"], 1)
+        self.assertEqual(summary["skipped_count"], 2)
+
+    @patch("backend.services.demand.connectors.firecrawl_connector.FirecrawlDemandConnector.collect")
+    @patch("backend.services.demand.connectors.firecrawl_search_connector.FirecrawlSearchDemandConnector.collect")
+    def test_firecrawl_search_supports_real_research_without_google(self, search_collect: Mock, scrape_collect: Mock) -> None:
+        search_collect.return_value = DemandConnectorResponse(
+            source_type="google_search",
+            connector_key="firecrawl_search",
+            status="completed",
+            signals=[
+                DemandRawSignal(
+                    source_type="review_site",
+                    source_name="example.com",
+                    connector_key="firecrawl_search",
+                    url="https://example.com/reviews",
+                    title="Reviews",
+                    body="Reporting takes too long.",
+                ),
+            ],
+        )
+        scrape_collect.return_value = DemandConnectorResponse(
+            source_type="review_site",
+            connector_key="firecrawl",
+            status="completed",
+            signals=[
+                DemandRawSignal(
+                    source_type="review_site",
+                    source_name="example.com",
+                    connector_key="firecrawl",
+                    url="https://example.com/reviews",
+                    title="Reviews",
+                    body="Full review content.",
+                ),
+            ],
+        )
+        service = DemandIntelligenceService(
+            repository=_SourceRunRepository(),
+            settings=Settings(
+                demand_real_sources_enabled=True,
+                demand_synthetic_fallback=True,
+                firecrawl_api_key="key",
+            ),
+        )
+        signals, summary = service._collect_signals(
+            user_id="user",
+            run_id="run",
+            query="ad reporting",
+            pair={},
+            ad=None,
+            lp=None,
+        )
+        self.assertEqual([signal.connector_key for signal in signals], ["firecrawl_search", "firecrawl"])
+        self.assertEqual(summary["evidence_status"], "real")
+        scrape_request = scrape_collect.call_args.args[0]
+        self.assertEqual(scrape_request.expanded_queries, ["https://example.com/reviews"])
 
     def test_synthetic_is_only_used_when_real_sources_are_unavailable(self) -> None:
         service = DemandIntelligenceService(

@@ -41,6 +41,10 @@ class Settings(BaseModel):
     google_custom_search_api_key: str | None = None
     google_custom_search_engine_id: str | None = None
     firecrawl_api_key: str | None = None
+    firecrawl_search_enabled: bool = True
+    firecrawl_search_max_queries: int = Field(default=4, ge=1, le=10)
+    firecrawl_search_results_per_query: int = Field(default=10, ge=1, le=10)
+    firecrawl_search_max_results_per_run: int = Field(default=30, ge=1, le=100)
     firecrawl_max_urls_per_run: int = 8
     firecrawl_max_age_ms: int = 172800000
     firecrawl_timeout_ms: int = 60000
@@ -114,6 +118,10 @@ def load_settings() -> Settings:
         google_custom_search_api_key=os.getenv("GOOGLE_CUSTOM_SEARCH_API_KEY"),
         google_custom_search_engine_id=os.getenv("GOOGLE_CUSTOM_SEARCH_ENGINE_ID"),
         firecrawl_api_key=os.getenv("FIRECRAWL_API_KEY"),
+        firecrawl_search_enabled=_env_bool("FIRECRAWL_SEARCH_ENABLED", True),
+        firecrawl_search_max_queries=int(os.getenv("FIRECRAWL_SEARCH_MAX_QUERIES", "4")),
+        firecrawl_search_results_per_query=int(os.getenv("FIRECRAWL_SEARCH_RESULTS_PER_QUERY", "10")),
+        firecrawl_search_max_results_per_run=int(os.getenv("FIRECRAWL_SEARCH_MAX_RESULTS_PER_RUN", "30")),
         firecrawl_max_urls_per_run=int(os.getenv("FIRECRAWL_MAX_URLS_PER_RUN", "8")),
         firecrawl_max_age_ms=int(os.getenv("FIRECRAWL_MAX_AGE_MS", "172800000")),
         firecrawl_timeout_ms=int(os.getenv("FIRECRAWL_TIMEOUT_MS", "60000")),

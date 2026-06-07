@@ -30,13 +30,46 @@ class SourceQueryBuilder:
         modifiers = (
             ["不満", "困る", "高い", "分かりにくい", "比較", "代替", "レビュー", "評判", "よくある質問"]
             if locale == "ja"
-            else ["complaints", "problems", "too expensive", "difficult to use", "comparison", "alternative", "reviews", "switching", "frequently asked questions"]
+            else [
+                "complaints",
+                "problems",
+                "too expensive",
+                "difficult to use",
+                "comparison",
+                "alternative",
+                "reviews",
+                "switching",
+                "frequently asked questions",
+            ]
         )
         expanded = [f"{seed} {modifier}".strip() for modifier in modifiers]
         auxiliary = (
-            [f"site:reddit.com {seed} 不満 OR レビュー OR 代替", f"site:x.com {seed} 不満 OR 困る OR 欲しい"]
+            [
+                f"site:reddit.com {seed} 不満 OR レビュー OR 代替",
+                f"site:x.com {seed} 不満 OR 困る OR 欲しい",
+            ]
             if locale == "ja"
-            else [f"site:reddit.com {seed} problem OR review OR alternative", f"site:x.com {seed} complaint OR difficult OR wish"]
+            else [
+                f"site:reddit.com {seed} problem OR review OR alternative",
+                f"site:x.com {seed} complaint OR difficult OR wish",
+            ]
+        )
+        firecrawl_search_queries = (
+            [
+                query,
+                f"{seed} 不満 困る 欲しい",
+                f"{seed} 比較 代替 レビュー 評判",
+                f"{seed} よくある質問 課題 解決",
+                *auxiliary,
+            ]
+            if locale == "ja"
+            else [
+                query,
+                f"{seed} complaints problems wish",
+                f"{seed} comparison alternatives reviews",
+                f"{seed} frequently asked questions pain points solutions",
+                *auxiliary,
+            ]
         )
         urls = [
             value
@@ -45,6 +78,7 @@ class SourceQueryBuilder:
         ]
         return {
             "google_custom_search": [query, *auxiliary, *expanded],
+            "firecrawl_search": firecrawl_search_queries,
             "firecrawl": list(dict.fromkeys(urls)),
             "synthetic": expanded,
         }

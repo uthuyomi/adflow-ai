@@ -29,9 +29,10 @@ class FirecrawlDemandConnector:
                 metadata={"reason": "missing_api_key"},
             )
 
-        urls = sorted([
-            url for url in dict.fromkeys(request.expanded_queries) if _is_public_http_url(url)
-        ], key=_url_priority)[: self.settings.firecrawl_max_urls_per_run]
+        urls = sorted(
+            [url for url in dict.fromkeys(request.expanded_queries) if _is_public_http_url(url)],
+            key=url_priority,
+        )[: self.settings.firecrawl_max_urls_per_run]
         if not urls:
             return DemandConnectorResponse(
                 source_type=self.source_type,
@@ -63,20 +64,20 @@ class FirecrawlDemandConnector:
                     ),
                 )
                 response.raise_for_status()
-                data = (response.json().get("data") or {})
+                data = response.json().get("data") or {}
                 metadata = data.get("metadata") or {}
                 markdown = (data.get("markdown") or "").strip()
                 if not markdown:
                     errors.append(f"{url}: empty content")
                     continue
-                source_type = _classify_source_type(url, metadata.get("title") or "", markdown)
+                source_url = metadata.get("sourceURL") or url
                 signals.append(
                     DemandRawSignal(
-                        source_type=source_type,
-                        source_name=metadata.get("sourceURL") or urlparse(url).netloc or "Firecrawl",
+                        source_type=classify_source_type(source_url, metadata.get("title") or "", markdown),
+                        source_name=urlparse(source_url).netloc or "Firecrawl",
                         connector_key=self.connector_key,
-                        external_id=metadata.get("sourceURL") or url,
-                        url=metadata.get("sourceURL") or url,
+                        external_id=source_url,
+                        url=source_url,
                         title=metadata.get("title") or url,
                         body=markdown[:12_000],
                         collected_at=datetime.now(timezone.utc).isoformat(),
@@ -99,19 +100,15 @@ class FirecrawlDemandConnector:
             status=status,
             signals=signals,
             error_message="; ".join(errors) or None,
-            metadata={"requested_urls": len(urls), "scraped_urls": len(signals)},
+            metadata={
+                "requested_urls": len(urls),
+                "scraped_urls": len(signals),
+                "estimated_scrape_credits": len(signals),
+            },
         )
 
 
-def _is_public_http_url(url: str) -> bool:
-    try:
-        validate_public_http_url(url)
-        return True
-    except ValueError:
-        return False
-
-
-def _classify_source_type(url: str, title: str, body: str) -> str:
+def classify_source_type(url: str, title: str, body: str) -> str:
     value = f"{url} {title} {body[:1000]}".lower()
     host = (urlparse(url).hostname or "").lower()
     if "reddit.com" in host or "forum" in value or "掲示板" in value:
@@ -125,10 +122,18 @@ def _classify_source_type(url: str, title: str, body: str) -> str:
     return "competitor_lp"
 
 
-def _url_priority(url: str) -> tuple[int, str]:
+def url_priority(url: str) -> tuple[int, str]:
     value = url.lower()
     if any(term in value for term in ("review", "reviews", "口コミ", "評判", "comparison", "compare")):
         return (0, value)
     if "reddit.com" in value or "x.com" in value or "twitter.com" in value:
         return (1, value)
     return (2, value)
+
+
+def _is_public_http_url(url: str) -> bool:
+    try:
+        validate_public_http_url(url)
+        return True
+    except ValueError:
+        return False

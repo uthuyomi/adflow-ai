@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from math import sqrt
 from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -949,8 +950,10 @@ class DemandIntelligenceService:
             all_signals.extend(execute_connector(self.connector_registry.synthetic, expanded["synthetic"]))
         else:
             google = self.connector_registry.google
+            firecrawl_search = self.connector_registry.firecrawl_search
             firecrawl = self.connector_registry.firecrawl
             google_signals: list[DemandRawSignal] = []
+            firecrawl_search_signals: list[DemandRawSignal] = []
 
             if google.is_configured(self.settings):
                 google_signals = execute_connector(google, expanded["google_custom_search"])
@@ -958,10 +961,19 @@ class DemandIntelligenceService:
             else:
                 record_skipped(google, "missing_api_key")
 
+            if firecrawl_search.is_configured(self.settings):
+                firecrawl_search_signals = execute_connector(firecrawl_search, expanded["firecrawl_search"])
+                all_signals.extend(firecrawl_search_signals)
+            else:
+                reason = "disabled" if not self.settings.firecrawl_search_enabled else "missing_api_key"
+                record_skipped(firecrawl_search, reason)
+
             discovered_urls = [
-                signal.url for signal in google_signals if signal.url
+                signal.url
+                for signal in [*google_signals, *firecrawl_search_signals]
+                if signal.url
             ]
-            firecrawl_urls = list(dict.fromkeys([*expanded["firecrawl"], *discovered_urls]))
+            firecrawl_urls = _unique_urls([*expanded["firecrawl"], *discovered_urls])
             if firecrawl.is_configured(self.settings):
                 if firecrawl_urls:
                     all_signals.extend(execute_connector(firecrawl, firecrawl_urls))
@@ -1652,3 +1664,31 @@ def _looks_uuid(value: Any) -> bool:
         return False
     parts = value.split("-")
     return len(parts) == 5 and all(parts)
+
+
+def _unique_urls(urls: list[str]) -> list[str]:
+    unique: dict[str, str] = {}
+    tracking_keys = {"fbclid", "gclid", "ref", "source"}
+    for url in urls:
+        try:
+            parts = urlsplit(url.strip())
+            query = urlencode(
+                [
+                    (key, value)
+                    for key, value in parse_qsl(parts.query, keep_blank_values=True)
+                    if not key.lower().startswith("utm_") and key.lower() not in tracking_keys
+                ],
+            )
+            normalized = urlunsplit(
+                (
+                    parts.scheme.lower(),
+                    parts.netloc.lower(),
+                    parts.path.rstrip("/") or "/",
+                    query,
+                    "",
+                ),
+            )
+        except ValueError:
+            normalized = url.strip()
+        unique.setdefault(normalized, url)
+    return list(unique.values())
