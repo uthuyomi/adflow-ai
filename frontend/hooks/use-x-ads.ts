@@ -12,6 +12,7 @@ import {
   listXAdsPublishRequests,
   publishXAdsRequest,
   revokeXAdsConnection,
+  startXAdsOAuth,
   verifyXAdsConnection,
 } from "@/lib/api/product";
 
@@ -40,6 +41,7 @@ export function useXAdsMutations(projectId?: string) {
     ]);
   };
   return {
+    startOAuth: useMutation({ mutationFn: startXAdsOAuth }),
     connect: useMutation({ mutationFn: createXAdsConnection, onSuccess: refresh }),
     verify: useMutation({ mutationFn: verifyXAdsConnection, onSuccess: refresh }),
     revoke: useMutation({ mutationFn: revokeXAdsConnection, onSuccess: refresh }),

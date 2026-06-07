@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Check, KeyRound, RefreshCw, Send, ShieldCheck, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Check, ChevronDown, KeyRound, RefreshCw, Send, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,8 @@ import { useI18n } from "@/hooks/use-i18n";
 
 export function XAdsOperationsPanel({ projectId }: { projectId?: string }) {
   const { t } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const connections = useXAdsConnections();
   const accounts = useXAdsAccounts();
   const publishRequests = useXAdsPublishRequests(projectId);
@@ -20,8 +23,18 @@ export function XAdsOperationsPanel({ projectId }: { projectId?: string }) {
   const [label, setLabel] = useState("Production X Ads");
   const [token, setToken] = useState("");
   const [secret, setSecret] = useState("");
+  const [showManual, setShowManual] = useState(false);
   const activeConnectionIds = new Set((connections.data ?? []).filter((item) => item.status === "active").map((item) => item.id));
   const activeAccounts = (accounts.data ?? []).filter((item) => activeConnectionIds.has(item.connection_id));
+
+  useEffect(() => {
+    const result = searchParams.get("x_ads");
+    if (!result) return;
+    if (result === "connected") toast.success(t("xAds.oauthConnected"));
+    else if (result === "denied") toast.info(t("xAds.oauthDenied"));
+    else toast.error(t("xAds.oauthFailed"));
+    router.replace(projectId ? `/ad-optimization/${projectId}` : "/ad-optimization", { scroll: false });
+  }, [projectId, router, searchParams, t]);
 
   async function act(action: () => Promise<unknown>, success: string) {
     try {
@@ -42,24 +55,53 @@ export function XAdsOperationsPanel({ projectId }: { projectId?: string }) {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 lg:grid-cols-3">
-            <Input aria-label={t("xAds.connectionLabel")} onChange={(event) => setLabel(event.target.value)} placeholder={t("xAds.connectionLabel")} value={label} />
-            <Input aria-label={t("xAds.accessToken")} autoComplete="off" onChange={(event) => setToken(event.target.value)} placeholder={t("xAds.accessToken")} type="password" value={token} />
-            <Input aria-label={t("xAds.accessTokenSecret")} autoComplete="off" onChange={(event) => setSecret(event.target.value)} placeholder={t("xAds.accessTokenSecret")} type="password" value={secret} />
-          </div>
-          <div className="flex justify-end">
+          <div className="flex flex-col gap-3 rounded-md border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="font-medium">{t("xAds.oauthTitle")}</div>
+              <p className="mt-1 text-sm text-muted-foreground">{t("xAds.oauthDescription")}</p>
+            </div>
             <Button
-              disabled={mutations.connect.isPending || !label.trim() || !token.trim() || !secret.trim()}
+              disabled={mutations.startOAuth.isPending}
               onClick={() => act(async () => {
-                await mutations.connect.mutateAsync({ label, access_token: token, access_token_secret: secret });
-                setToken("");
-                setSecret("");
-              }, "X Ads connection verified and saved.")}
+                const result = await mutations.startOAuth.mutateAsync({
+                  label: "X Ads",
+                  return_path: projectId ? `/ad-optimization/${projectId}` : "/ad-optimization",
+                });
+                window.location.assign(result.authorization_url);
+              }, t("xAds.oauthRedirecting"))}
               type="button"
             >
-              <ShieldCheck className="mr-2 h-4 w-4" />{t("xAds.connectVerify")}
+              <ShieldCheck className="mr-2 h-4 w-4" />{t("xAds.connectWithX")}
             </Button>
           </div>
+          <Button className="px-0 text-muted-foreground" onClick={() => setShowManual((value) => !value)} size="sm" type="button" variant="ghost">
+            <ChevronDown className={`mr-2 h-4 w-4 transition-transform ${showManual ? "rotate-180" : ""}`} />
+            {t("xAds.manualConnection")}
+          </Button>
+          {showManual ? (
+            <div className="space-y-3 rounded-md border border-border p-4">
+              <p className="text-sm text-muted-foreground">{t("xAds.manualConnectionDescription")}</p>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <Input aria-label={t("xAds.connectionLabel")} onChange={(event) => setLabel(event.target.value)} placeholder={t("xAds.connectionLabel")} value={label} />
+                <Input aria-label={t("xAds.accessToken")} autoComplete="off" onChange={(event) => setToken(event.target.value)} placeholder={t("xAds.accessToken")} type="password" value={token} />
+                <Input aria-label={t("xAds.accessTokenSecret")} autoComplete="off" onChange={(event) => setSecret(event.target.value)} placeholder={t("xAds.accessTokenSecret")} type="password" value={secret} />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  disabled={mutations.connect.isPending || !label.trim() || !token.trim() || !secret.trim()}
+                  onClick={() => act(async () => {
+                    await mutations.connect.mutateAsync({ label, access_token: token, access_token_secret: secret });
+                    setToken("");
+                    setSecret("");
+                  }, t("xAds.manualConnected"))}
+                  type="button"
+                  variant="outline"
+                >
+                  <KeyRound className="mr-2 h-4 w-4" />{t("xAds.connectVerify")}
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <div className="space-y-2">
             {(connections.data ?? []).map((connection) => (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3" key={connection.id}>
@@ -94,7 +136,7 @@ export function XAdsOperationsPanel({ projectId }: { projectId?: string }) {
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border p-3" key={account.id}>
               <div>
                 <div className="font-medium">{account.name}</div>
-                <div className="text-sm text-muted-foreground">{account.x_account_id} · {account.currency || "currency unknown"} · Last sync {account.last_synced_at ? new Date(account.last_synced_at).toLocaleString() : "never"}</div>
+                <div className="text-sm text-muted-foreground">{account.x_account_id} / {account.currency || "currency unknown"} / Last sync {account.last_synced_at ? new Date(account.last_synced_at).toLocaleString() : "never"}</div>
               </div>
               <Button onClick={() => act(() => mutations.sync.mutateAsync({ connection_id: account.connection_id, account_id: account.x_account_id, days: 30 }), "X Ads metrics synced.")} size="sm" type="button">
                 <RefreshCw className={`mr-2 h-4 w-4 ${mutations.sync.isPending ? "animate-spin" : ""}`} />{t("xAds.sync30Days")}

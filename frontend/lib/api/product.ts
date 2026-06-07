@@ -235,6 +235,13 @@ export async function listXAdsConnections() {
   return requestWithAuth<XAdsConnection[]>("/integrations/x-ads/connections");
 }
 
+export async function startXAdsOAuth(payload: { label?: string; return_path?: string }) {
+  return requestWithAuth<{ authorization_url: string }>("/integrations/x-ads/oauth/start", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createXAdsConnection(payload: { label: string; access_token: string; access_token_secret: string }) {
   return requestWithAuth<XAdsConnection & { accounts: XAdsAccount[] }>("/integrations/x-ads/connections", {
     method: "POST",

@@ -129,24 +129,15 @@ class XAdsClient:
         return payload if isinstance(payload, dict) else {"data": payload}
 
     def _oauth_header(self, method: str, url: str, request_params: dict[str, str]) -> str:
-        oauth = {
-            "oauth_consumer_key": self.consumer_key,
-            "oauth_nonce": secrets.token_hex(16),
-            "oauth_signature_method": "HMAC-SHA1",
-            "oauth_timestamp": str(int(time.time())),
-            "oauth_token": self.access_token,
-            "oauth_version": "1.0",
-        }
-        signature_params = {**request_params, **oauth}
-        parameter_string = "&".join(
-            f"{_encode(key)}={_encode(value)}"
-            for key, value in sorted(signature_params.items(), key=lambda item: (_encode(item[0]), _encode(item[1])))
+        return build_oauth_header(
+            consumer_key=self.consumer_key,
+            consumer_secret=self.consumer_secret,
+            method=method,
+            url=url,
+            request_params=request_params,
+            token=self.access_token,
+            token_secret=self.access_token_secret,
         )
-        base_string = "&".join((_encode(method.upper()), _encode(url), _encode(parameter_string)))
-        signing_key = f"{_encode(self.consumer_secret)}&{_encode(self.access_token_secret)}"
-        digest = hmac.new(signing_key.encode("ascii"), base_string.encode("ascii"), hashlib.sha1).digest()
-        oauth["oauth_signature"] = base64.b64encode(digest).decode("ascii")
-        return "OAuth " + ", ".join(f'{_encode(key)}="{_encode(value)}"' for key, value in sorted(oauth.items()))
 
     def _paged(self, path: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -172,6 +163,43 @@ class XAdsClient:
 
 def _encode(value: Any) -> str:
     return quote(str(value), safe="~-._")
+
+
+def build_oauth_header(
+    *,
+    consumer_key: str,
+    consumer_secret: str,
+    method: str,
+    url: str,
+    request_params: dict[str, str] | None = None,
+    token: str | None = None,
+    token_secret: str | None = None,
+    callback: str | None = None,
+    verifier: str | None = None,
+) -> str:
+    oauth = {
+        "oauth_consumer_key": consumer_key,
+        "oauth_nonce": secrets.token_hex(16),
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": str(int(time.time())),
+        "oauth_version": "1.0",
+    }
+    if token:
+        oauth["oauth_token"] = token
+    if callback:
+        oauth["oauth_callback"] = callback
+    if verifier:
+        oauth["oauth_verifier"] = verifier
+    signature_params = {**(request_params or {}), **oauth}
+    parameter_string = "&".join(
+        f"{_encode(key)}={_encode(value)}"
+        for key, value in sorted(signature_params.items(), key=lambda item: (_encode(item[0]), _encode(item[1])))
+    )
+    base_string = "&".join((_encode(method.upper()), _encode(url), _encode(parameter_string)))
+    signing_key = f"{_encode(consumer_secret)}&{_encode(token_secret or '')}"
+    digest = hmac.new(signing_key.encode("ascii"), base_string.encode("ascii"), hashlib.sha1).digest()
+    oauth["oauth_signature"] = base64.b64encode(digest).decode("ascii")
+    return "OAuth " + ", ".join(f'{_encode(key)}="{_encode(value)}"' for key, value in sorted(oauth.items()))
 
 
 def _chunks(values: list[str], size: int) -> list[list[str]]:

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Activity, FileText, FlaskConical, Megaphone, Play, Plus, Sparkles, Trophy } from "lucide-react";
@@ -31,6 +31,7 @@ import type { TwitterAd } from "@/lib/types/adflow";
 export default function AdOptimizationProjectPage() {
   const { t } = useI18n();
   const params = useParams<{ projectId: string }>();
+  const searchParams = useSearchParams();
   const project = useProject(params.projectId);
   const ads = useTwitterAds();
   const lps = useLandingPages();
@@ -83,7 +84,7 @@ export default function AdOptimizationProjectPage() {
         <Metric label={t("adOptimization.recordedResults")} value={projectOutcomes.length} />
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs defaultValue={searchParams.has("x_ads") ? "x-ads" : "overview"}>
         <TabsList className="flex flex-wrap">
           <TabsTrigger value="overview">{t("adOptimization.tabOverview")}</TabsTrigger>
           <TabsTrigger value="assets">{t("adOptimization.tabAssets")}</TabsTrigger>

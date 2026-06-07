@@ -6,6 +6,7 @@ from typing import Any, Literal
 import requests
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from backend.core.config import Settings, load_settings
@@ -160,6 +161,11 @@ class CreateXAdsConnectionRequest(BaseModel):
     label: str = Field(min_length=1, max_length=80)
     access_token: str = Field(min_length=1)
     access_token_secret: str = Field(min_length=1)
+
+
+class StartXAdsOAuthRequest(BaseModel):
+    label: str = Field(default="X Ads", min_length=1, max_length=80)
+    return_path: str | None = None
 
 
 class XAdsDetailedSyncRequest(BaseModel):
@@ -510,6 +516,40 @@ def list_x_ads_connections(user_id: str = Depends(_authenticated_user_id)) -> li
         return _build_x_ads_service(load_settings()).list_connections(user_id=user_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/oauth/start")
+def start_x_ads_oauth(
+    request: StartXAdsOAuthRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, str]:
+    try:
+        return _build_x_ads_service(load_settings()).start_oauth(
+            user_id=user_id,
+            label=request.label,
+            return_path=request.return_path,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/x-ads/oauth/callback")
+def complete_x_ads_oauth(
+    state: str | None = None,
+    oauth_token: str | None = None,
+    oauth_verifier: str | None = None,
+    denied: str | None = None,
+) -> RedirectResponse:
+    try:
+        target = _build_x_ads_service(load_settings()).complete_oauth(
+            state=state,
+            oauth_token=oauth_token,
+            oauth_verifier=oauth_verifier,
+            denied=denied,
+        )
+    except ValueError:
+        target = f"{load_settings().frontend_app_url.rstrip('/')}/ad-optimization?x_ads=failed&reason=configuration"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @app.post("/integrations/x-ads/connections")

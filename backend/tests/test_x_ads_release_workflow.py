@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from cryptography.fernet import Fernet
@@ -19,6 +21,8 @@ class XAdsReleaseWorkflowTests(unittest.TestCase):
                 x_ads_consumer_key="consumer",
                 x_ads_consumer_secret="consumer-secret",
                 x_ads_token_encryption_key=Fernet.generate_key().decode("ascii"),
+                frontend_app_url="https://app.example.com",
+                x_ads_oauth_callback_url="https://api.example.com/integrations/x-ads/oauth/callback",
             ),
         )
 
@@ -63,6 +67,84 @@ class XAdsReleaseWorkflowTests(unittest.TestCase):
         second = self.service.create_publish_request(user_id="user", source_ai_result_id="result", connection_id="connection", account_id="account", line_item_id="line")
         self.assertEqual(first["id"], second["id"])
 
+    def test_oauth_start_stores_only_encrypted_request_secret(self) -> None:
+        oauth = Mock()
+        oauth.request_token.return_value = {
+            "oauth_token": "request-token",
+            "oauth_token_secret": "request-secret",
+            "oauth_callback_confirmed": "true",
+        }
+        oauth.authorization_url.return_value = "https://api.x.com/oauth/authorize?oauth_token=request-token"
+        self.service._oauth_client = Mock(return_value=oauth)  # type: ignore[method-assign]
+
+        result = self.service.start_oauth(user_id="user", label="My X Ads", return_path="/ad-optimization/project")
+        session = self.repository.tables["x_ads_oauth_sessions"][0]
+
+        self.assertEqual(result["authorization_url"], oauth.authorization_url.return_value)
+        self.assertNotEqual(session["encrypted_request_token_secret"], "request-secret")
+        self.assertNotIn("request-token", session.values())
+        callback_url = oauth.request_token.call_args.args[0]
+        self.assertEqual(callback_url, "https://api.example.com/integrations/x-ads/oauth/callback")
+
+    def test_oauth_callback_denial_does_not_create_connection(self) -> None:
+        session = self._oauth_session(expires_at=datetime.now(timezone.utc) + timedelta(minutes=5))
+        redirect = self.service.complete_oauth(
+            state=session["state"],
+            oauth_token=None,
+            oauth_verifier=None,
+            denied="request-token",
+        )
+        self.assertIn("x_ads=denied", redirect)
+        self.assertEqual(session["status"], "denied")
+        self.assertFalse(self.repository.tables.get("x_ads_connections"))
+
+    def test_oauth_callback_rejects_expired_session(self) -> None:
+        session = self._oauth_session(expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+        redirect = self.service.complete_oauth(
+            state=session["state"],
+            oauth_token="request-token",
+            oauth_verifier="verifier",
+        )
+        self.assertIn("reason=expired", redirect)
+        self.assertEqual(session["status"], "expired")
+
+    def test_oauth_callback_exchanges_token_and_connects(self) -> None:
+        session = self._oauth_session(expires_at=datetime.now(timezone.utc) + timedelta(minutes=5))
+        oauth = Mock()
+        oauth.access_token.return_value = {
+            "oauth_token": "access-token",
+            "oauth_token_secret": "access-secret",
+            "user_id": "x-user",
+            "screen_name": "adflow",
+        }
+        self.service._oauth_client = Mock(return_value=oauth)  # type: ignore[method-assign]
+        self.service._create_verified_connection = Mock(return_value={"id": "connection"})  # type: ignore[method-assign]
+
+        redirect = self.service.complete_oauth(
+            state=session["state"],
+            oauth_token="request-token",
+            oauth_verifier="verifier",
+        )
+
+        self.assertIn("x_ads=connected", redirect)
+        self.assertEqual(session["status"], "completed")
+        self.service._create_verified_connection.assert_called_once()
+
+    def _oauth_session(self, *, expires_at: datetime) -> dict:
+        return self.repository.insert(
+            "x_ads_oauth_sessions",
+            {
+                "user_id": "user",
+                "state": "state",
+                "oauth_token_hash": hashlib.sha256(b"request-token").hexdigest(),
+                "encrypted_request_token_secret": self.service.cipher.encrypt("request-secret"),
+                "label": "X Ads",
+                "return_path": "/ad-optimization/project",
+                "status": "pending",
+                "expires_at": expires_at.isoformat(),
+            },
+        )
+
 
 class _Repository:
     def __init__(self) -> None:
@@ -80,6 +162,12 @@ class _Repository:
         if not rows:
             raise ValueError(f"{table} record was not found.")
         return rows[0]
+
+    def get_related_many(self, table: str, *, filters, **kwargs):
+        rows = list(self.tables.get(table, []))
+        for key, value in filters.items():
+            rows = [row for row in rows if row.get(key) == value]
+        return rows
 
     def insert(self, table: str, payload: dict):
         self.sequence += 1

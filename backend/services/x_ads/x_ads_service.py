@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlencode
 
 from backend.core.config import Settings
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
@@ -10,6 +12,7 @@ from backend.services.product.ad_ab_test_service import AdABTestService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 from backend.services.x_ads.token_cipher import TokenCipher
 from backend.services.x_ads.x_ads_client import XAdsClient
+from backend.services.x_ads.x_oauth_client import XOAuthClient
 
 
 class XAdsService:
@@ -21,6 +24,83 @@ class XAdsService:
     def list_connections(self, *, user_id: str) -> list[dict[str, Any]]:
         return [self._public_connection(row) for row in self.repository.get_many("x_ads_connections", user_id=user_id, order="created_at.desc")]
 
+    def start_oauth(self, *, user_id: str, label: str, return_path: str | None = None) -> dict[str, str]:
+        state = secrets.token_urlsafe(32)
+        token = self._oauth_client().request_token(self.settings.x_ads_oauth_callback_url)
+        if token.get("oauth_callback_confirmed") != "true":
+            raise ValueError("X did not confirm the OAuth callback URL.")
+        request_token = token["oauth_token"]
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        self.repository.insert(
+            "x_ads_oauth_sessions",
+            {
+                "user_id": user_id,
+                "state": state,
+                "oauth_token_hash": _token_hash(request_token),
+                "encrypted_request_token_secret": self.cipher.encrypt(token["oauth_token_secret"]),
+                "label": label.strip() or "X Ads",
+                "return_path": _safe_return_path(return_path),
+                "status": "pending",
+                "expires_at": expires_at.isoformat(),
+            },
+        )
+        return {"authorization_url": self._oauth_client().authorization_url(request_token)}
+
+    def complete_oauth(
+        self,
+        *,
+        state: str | None,
+        oauth_token: str | None,
+        oauth_verifier: str | None,
+        denied: str | None = None,
+    ) -> str:
+        supplied_token = oauth_token or denied
+        if not supplied_token:
+            return self._frontend_redirect("/ad-optimization", "failed", "missing_token")
+        rows = self.repository.get_related_many(
+            "x_ads_oauth_sessions",
+            filters={"oauth_token_hash": _token_hash(supplied_token)},
+            limit=1,
+        )
+        if not rows:
+            return self._frontend_redirect("/ad-optimization", "failed", "invalid_session")
+        session = rows[0]
+        if state and session.get("state") != state:
+            return self._frontend_redirect("/ad-optimization", "failed", "invalid_session")
+        user_id = str(session["user_id"])
+        return_path = _safe_return_path(session.get("return_path"))
+        if session.get("status") != "pending":
+            return self._frontend_redirect(return_path, "failed", "session_used")
+        expires_at = datetime.fromisoformat(str(session["expires_at"]).replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) >= expires_at:
+            self._update_oauth_session(user_id=user_id, session_id=session["id"], status="expired", error_code="expired")
+            return self._frontend_redirect(return_path, "failed", "expired")
+        if denied:
+            self._update_oauth_session(user_id=user_id, session_id=session["id"], status="denied", error_code="denied")
+            return self._frontend_redirect(return_path, "denied", "denied")
+        if not oauth_token or not oauth_verifier:
+            self._update_oauth_session(user_id=user_id, session_id=session["id"], status="failed", error_code="missing_verifier")
+            return self._frontend_redirect(return_path, "failed", "missing_verifier")
+        try:
+            access = self._oauth_client().access_token(
+                request_token=oauth_token,
+                request_token_secret=self.cipher.decrypt(session["encrypted_request_token_secret"]),
+                verifier=oauth_verifier,
+            )
+            self._create_verified_connection(
+                user_id=user_id,
+                label=session["label"],
+                access_token=access["oauth_token"],
+                access_token_secret=access["oauth_token_secret"],
+                x_user_id=access.get("user_id"),
+                x_username=access.get("screen_name"),
+            )
+            self._update_oauth_session(user_id=user_id, session_id=session["id"], status="completed")
+            return self._frontend_redirect(return_path, "connected", None)
+        except Exception:
+            self._update_oauth_session(user_id=user_id, session_id=session["id"], status="failed", error_code="exchange_failed")
+            return self._frontend_redirect(return_path, "failed", "exchange_failed")
+
     def create_connection(
         self,
         *,
@@ -29,6 +109,23 @@ class XAdsService:
         access_token: str,
         access_token_secret: str,
     ) -> dict[str, Any]:
+        return self._create_verified_connection(
+            user_id=user_id,
+            label=label,
+            access_token=access_token,
+            access_token_secret=access_token_secret,
+        )
+
+    def _create_verified_connection(
+        self,
+        *,
+        user_id: str,
+        label: str,
+        access_token: str,
+        access_token_secret: str,
+        x_user_id: str | None = None,
+        x_username: str | None = None,
+    ) -> dict[str, Any]:
         client = self._client(access_token=access_token, access_token_secret=access_token_secret)
         accounts = client.list_accounts()
         connection = self.repository.insert(
@@ -36,6 +133,8 @@ class XAdsService:
             {
                 "user_id": user_id,
                 "label": label.strip() or "X Ads",
+                "x_user_id": x_user_id,
+                "x_username": x_username,
                 "encrypted_access_token": self.cipher.encrypt(access_token),
                 "encrypted_access_token_secret": self.cipher.encrypt(access_token_secret),
                 "scopes": ["ads.read", "ads.write", "tweet_composer"],
@@ -374,6 +473,32 @@ class XAdsService:
             ads_base_url=self.settings.x_ads_api_base_url,
         )
 
+    def _oauth_client(self) -> XOAuthClient:
+        return XOAuthClient(
+            consumer_key=self.settings.x_ads_consumer_key or "",
+            consumer_secret=self.settings.x_ads_consumer_secret or "",
+            oauth_base_url=self.settings.x_ads_oauth_base_url,
+        )
+
+    def _update_oauth_session(self, *, user_id: str, session_id: str, status: str, error_code: str | None = None) -> None:
+        self.repository.update(
+            "x_ads_oauth_sessions",
+            user_id=user_id,
+            filters={"id": session_id},
+            payload={
+                "status": status,
+                "error_code": error_code,
+                "completed_at": _now(),
+                "encrypted_request_token_secret": None,
+            },
+        )
+
+    def _frontend_redirect(self, return_path: str, result: str, reason: str | None) -> str:
+        query = {"x_ads": result}
+        if reason:
+            query["reason"] = reason
+        return f"{self.settings.frontend_app_url.rstrip('/')}{_safe_return_path(return_path)}?{urlencode(query)}"
+
     def _store_account(self, *, user_id: str, connection_id: str, account: dict[str, Any], client: XAdsClient) -> dict[str, Any]:
         account_id = str(account.get("id"))
         promotable_users = client.list_promotable_users(account_id)
@@ -494,6 +619,17 @@ class XAdsService:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _token_hash(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _safe_return_path(value: str | None) -> str:
+    path = (value or "/ad-optimization").strip()
+    if not path.startswith("/") or path.startswith("//") or "://" in path:
+        return "/ad-optimization"
+    return path.split("?", 1)[0].split("#", 1)[0]
 
 
 def _proposal_text(result: dict[str, Any]) -> str | None:

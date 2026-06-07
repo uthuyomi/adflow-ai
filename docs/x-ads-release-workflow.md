@@ -1,5 +1,32 @@
 # X Ads Release Workflow
 
+## User connection flow
+
+Normal users connect X Ads through the **Connect with X** button. AdFlow starts a
+three-legged OAuth 1.0a authorization, stores the temporary request-token secret
+encrypted for at most ten minutes, and exchanges it for the user's access token
+after X redirects back.
+
+Users do not need to find, copy, or share access tokens. Manual token entry remains
+available only under the advanced connection section for development and recovery.
+
+Configure the X Developer Console callback URL to match:
+
+```text
+https://adflow-ai-api.fly.dev/integrations/x-ads/oauth/callback
+```
+
+Production backend environment:
+
+```env
+X_ADS_OAUTH_CALLBACK_URL=https://adflow-ai-api.fly.dev/integrations/x-ads/oauth/callback
+ADFLOW_FRONTEND_APP_URL=https://adflow-ai-wine.vercel.app
+```
+
+OAuth callback sessions are single-use and expire after ten minutes. Denied,
+expired, reused, and failed exchanges are returned to the application as explicit
+connection states.
+
 AdFlow AI uses the existing Pair Analysis, AI review, `apply_ready`, A/B test, and Outcome Learning features to operate an approval-gated X Ads improvement workflow.
 
 ## Release Flow

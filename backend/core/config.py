@@ -34,6 +34,9 @@ class Settings(BaseModel):
     x_ads_consumer_secret: str | None = None
     x_ads_token_encryption_key: str | None = None
     x_ads_api_base_url: str = "https://ads-api.x.com/12"
+    x_ads_oauth_base_url: str = "https://api.x.com/oauth"
+    x_ads_oauth_callback_url: str = "http://127.0.0.1:8000/integrations/x-ads/oauth/callback"
+    frontend_app_url: str = "http://localhost:3000"
     x_api_base_url: str = "https://api.x.com/2"
     google_custom_search_api_key: str | None = None
     google_custom_search_engine_id: str | None = None
@@ -104,6 +107,9 @@ def load_settings() -> Settings:
         x_ads_consumer_secret=os.getenv("X_ADS_CONSUMER_SECRET"),
         x_ads_token_encryption_key=os.getenv("X_ADS_TOKEN_ENCRYPTION_KEY"),
         x_ads_api_base_url=os.getenv("X_ADS_API_BASE_URL", "https://ads-api.x.com/12"),
+        x_ads_oauth_base_url=os.getenv("X_ADS_OAUTH_BASE_URL", "https://api.x.com/oauth"),
+        x_ads_oauth_callback_url=os.getenv("X_ADS_OAUTH_CALLBACK_URL", "http://127.0.0.1:8000/integrations/x-ads/oauth/callback"),
+        frontend_app_url=os.getenv("ADFLOW_FRONTEND_APP_URL", "http://localhost:3000"),
         x_api_base_url=os.getenv("X_API_BASE_URL", "https://api.x.com/2"),
         google_custom_search_api_key=os.getenv("GOOGLE_CUSTOM_SEARCH_API_KEY"),
         google_custom_search_engine_id=os.getenv("GOOGLE_CUSTOM_SEARCH_ENGINE_ID"),
