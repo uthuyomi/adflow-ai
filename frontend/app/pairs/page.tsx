@@ -16,27 +16,30 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAdLpPairMutations, useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
 import { useRunPairAnalysis } from "@/hooks/use-analysis-runs";
 import { useUiStore } from "@/lib/store";
+import { useI18n } from "@/hooks/use-i18n";
 
 function AnalyzeButton({ pairId }: { pairId: string }) {
+  const { t } = useI18n();
   const run = useRunPairAnalysis(pairId);
   const aiMode = useUiStore((state) => state.analysisAIMode);
   const analyze = async () => {
     try {
       await run.mutateAsync(aiMode);
-      toast.success("Analysis completed.");
+      toast.success(t("pairs.analysisCompleted"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Analysis failed.");
+      toast.error(error instanceof Error ? error.message : t("pairs.analysisFailed"));
     }
   };
   return (
     <Button size="sm" variant="outline" onClick={analyze} disabled={run.isPending}>
       <Play className="mr-2 h-4 w-4" />
-      {run.isPending ? "Running" : "Analyze"}
+      {run.isPending ? t("pairs.running") : t("pairs.analyze")}
     </Button>
   );
 }
 
 export default function PairsPage() {
+  const { t } = useI18n();
   const pairs = useAdLpPairs();
   const mutations = useAdLpPairMutations();
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -45,10 +48,10 @@ export default function PairsPage() {
     if (!deleteId) return;
     try {
       await mutations.remove.mutateAsync(deleteId);
-      toast.success("Pair deleted.");
+      toast.success(t("pairs.deleted"));
       setDeleteId(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Delete failed.");
+      toast.error(error instanceof Error ? error.message : t("pairs.deleteFailed"));
     }
   };
 
@@ -58,13 +61,13 @@ export default function PairsPage() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Ad LP Pairs"
-        description="Treat each ad and landing page pair as one analysis and review unit."
+        title={t("pairs.title")}
+        description={t("pairs.description")}
         action={
           <Button asChild>
             <Link href="/pairs/new">
               <Plus className="mr-2 h-4 w-4" />
-              New pair
+              {t("pairs.new")}
             </Link>
           </Button>
         }
@@ -74,12 +77,12 @@ export default function PairsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Pair</TableHead>
-                <TableHead>Ad</TableHead>
+                <TableHead>{t("pairs.pair")}</TableHead>
+                <TableHead>{t("adOptimization.ad")}</TableHead>
                 <TableHead>LP</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last analyzed</TableHead>
-                <TableHead className="w-64">Actions</TableHead>
+                <TableHead>{t("form.status")}</TableHead>
+                <TableHead>{t("pairs.lastAnalyzed")}</TableHead>
+                <TableHead className="w-64">{t("ads.table.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -94,16 +97,16 @@ export default function PairsPage() {
                     <div className="flex flex-wrap gap-1">
                       <AnalyzeButton pairId={pair.id} />
                       <Button asChild size="icon" variant="ghost">
-                        <Link href={`/pairs/${pair.id}`} aria-label="Pair detail">
+                        <Link href={`/pairs/${pair.id}`} aria-label={t("pairs.detail")}>
                           <Eye className="h-4 w-4" />
                         </Link>
                       </Button>
                       <Button asChild size="icon" variant="ghost">
-                        <Link href={`/pairs/${pair.id}/edit`} aria-label="Edit pair">
+                        <Link href={`/pairs/${pair.id}/edit`} aria-label={t("pairs.edit")}>
                           <Pencil className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => setDeleteId(pair.id)} aria-label="Delete pair">
+                      <Button size="icon" variant="ghost" onClick={() => setDeleteId(pair.id)} aria-label={t("pairs.delete")}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -114,12 +117,12 @@ export default function PairsPage() {
           </Table>
         </Card>
       ) : (
-        <EmptyState title="No ad LP pairs" description="Create a pair after registering at least one ad and one landing page." />
+        <EmptyState title={t("pairs.emptyTitle")} description={t("pairs.emptyDescription")} />
       )}
       <ConfirmDialog
         open={Boolean(deleteId)}
-        title="Delete pair"
-        description="The pair will be removed, but the delete history remains available."
+        title={t("pairs.delete")}
+        description={t("pairs.deleteDescription")}
         isPending={mutations.remove.isPending}
         onCancel={() => setDeleteId(null)}
         onConfirm={remove}

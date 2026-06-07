@@ -62,13 +62,13 @@ export default function AdOptimizationProjectPage() {
         action={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
-              <Link href="/ads/new">
+              <Link href={`/ads/new?project_id=${params.projectId}`}>
                 <Plus className="mr-2 h-4 w-4" />
                 {t("adOptimization.addAd")}
               </Link>
             </Button>
             <Button asChild>
-              <Link href="/pairs/new">
+              <Link href={`/pairs/new?project_id=${params.projectId}`}>
                 <Play className="mr-2 h-4 w-4" />
                 {t("adOptimization.newAnalysis")}
               </Link>
@@ -102,7 +102,7 @@ export default function AdOptimizationProjectPage() {
               <CardTitle>{t("adOptimization.nextAction")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <NextAction ads={projectAds.length} analyzed={analyzedCount} lps={projectLps.length} pairs={projectPairs.length} />
+              <NextAction ads={projectAds.length} analyzed={analyzedCount} lps={projectLps.length} pairs={projectPairs.length} projectId={params.projectId} />
             </CardContent>
           </Card>
           <div className="grid gap-4 md:grid-cols-3">
@@ -115,7 +115,7 @@ export default function AdOptimizationProjectPage() {
         <TabsContent value="assets">
           <div className="grid gap-4 lg:grid-cols-2">
             <AssetList
-              emptyAction="/ads/new"
+              emptyAction={`/ads/new?project_id=${params.projectId}`}
               emptyLabel={t("adOptimization.addAd")}
               emptyText={t("adOptimization.emptyAds")}
               items={projectAds.map((ad) => ({
@@ -127,7 +127,7 @@ export default function AdOptimizationProjectPage() {
               title={t("adOptimization.ads")}
             />
             <AssetList
-              emptyAction="/lps/new"
+              emptyAction={`/lps/new?project_id=${params.projectId}`}
               emptyLabel={t("adOptimization.addLp")}
               emptyText={t("adOptimization.emptyLps")}
               items={projectLps.map((lp) => ({
@@ -195,7 +195,7 @@ export default function AdOptimizationProjectPage() {
               <EmptyState title={t("adOptimization.noAnalysisTarget")} description={t("adOptimization.noAnalysisTargetDescription")} />
               <div className="flex justify-center">
                 <Button asChild>
-                  <Link href="/pairs/new">{t("adOptimization.createAnalysisTarget")}</Link>
+                  <Link href={`/pairs/new?project_id=${params.projectId}`}>{t("adOptimization.createAnalysisTarget")}</Link>
                 </Button>
               </div>
             </div>
@@ -269,12 +269,12 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function NextAction({ ads, analyzed, lps, pairs }: { ads: number; analyzed: number; lps: number; pairs: number }) {
+function NextAction({ ads, analyzed, lps, pairs, projectId }: { ads: number; analyzed: number; lps: number; pairs: number; projectId: string }) {
   const { t } = useI18n();
 
-  if (!ads) return <ActionText href="/ads/new" label={t("adOptimization.addAd")} text={t("adOptimization.nextAddAd")} />;
-  if (!lps) return <ActionText href="/lps/new" label={t("adOptimization.addLp")} text={t("adOptimization.nextAddLp")} />;
-  if (!pairs) return <ActionText href="/pairs/new" label={t("adOptimization.createAnalysisTarget")} text={t("adOptimization.nextCreateTarget")} />;
+  if (!ads) return <ActionText href={`/ads/new?project_id=${projectId}`} label={t("adOptimization.addAd")} text={t("adOptimization.nextAddAd")} />;
+  if (!lps) return <ActionText href={`/lps/new?project_id=${projectId}`} label={t("adOptimization.addLp")} text={t("adOptimization.nextAddLp")} />;
+  if (!pairs) return <ActionText href={`/pairs/new?project_id=${projectId}`} label={t("adOptimization.createAnalysisTarget")} text={t("adOptimization.nextCreateTarget")} />;
   if (!analyzed) return <ActionText href="/pairs" label={t("adOptimization.runAnalysis")} text={t("adOptimization.nextRunAnalysis")} />;
   return <ActionText href="/results" label={t("adOptimization.reviewResults")} text={t("adOptimization.nextReviewResults")} />;
 }

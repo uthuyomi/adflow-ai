@@ -18,7 +18,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { formatCurrency } from "@/lib/utils";
 
 export default function AdsPage() {
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
   const ads = useTwitterAds();
   const mutations = useTwitterAdMutations();
   const [deleteId, setDeleteId] = useState<string | null>(null);

@@ -3,9 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import re
 
-import requests
-
 from backend.core.config import Settings
+from backend.core.url_safety import safe_get_public_url
 from backend.services.demand.demand_models import DemandConnectorRequest, DemandConnectorResponse, DemandRawSignal
 
 
@@ -27,8 +26,11 @@ class WebPageDemandConnector:
         errors: list[str] = []
         for url in urls:
             try:
-                response = requests.get(url, timeout=self.settings.demand_connector_timeout_seconds, headers={"User-Agent": "AdFlowAI-DemandBot/0.1"})
-                response.raise_for_status()
+                response = safe_get_public_url(
+                    url,
+                    timeout=self.settings.demand_connector_timeout_seconds,
+                    headers={"User-Agent": "AdFlowAI-DemandBot/0.1"},
+                )
                 html = response.text[:100_000]
                 title = _extract_title(html) or url
                 body = _extract_bodyish_text(html)[:4000]

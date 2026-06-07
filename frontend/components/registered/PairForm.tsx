@@ -7,6 +7,7 @@ import { z } from "zod";
 import { FormField, SelectField } from "@/components/registered/FormField";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useI18n } from "@/hooks/use-i18n";
 import type { AdLpPair, LandingPage, TwitterAd } from "@/lib/types/adflow";
 
 const schema = z.object({
@@ -33,6 +34,7 @@ export function PairForm({
   submitLabel: string;
   onSubmit: (values: PairFormValues) => void;
 }) {
+  const { t } = useI18n();
   const form = useForm<PairFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -46,14 +48,14 @@ export function PairForm({
   return (
     <Card className="p-5">
       <form className="grid gap-4 md:grid-cols-2" onSubmit={form.handleSubmit(onSubmit)}>
-        <FormField label="Pair name" registration={form.register("name")} error={form.formState.errors.name} />
-        <SelectField label="Status" registration={form.register("status")} error={form.formState.errors.status}>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="draft">Draft</option>
+        <FormField label={t("form.pairName")} registration={form.register("name")} error={form.formState.errors.name} />
+        <SelectField label={t("form.status")} registration={form.register("status")} error={form.formState.errors.status}>
+          <option value="active">{t("status.active")}</option>
+          <option value="paused">{t("status.paused")}</option>
+          <option value="draft">{t("status.draft")}</option>
         </SelectField>
         <SelectField label="X ad" registration={form.register("twitter_ad_id")} error={form.formState.errors.twitter_ad_id}>
-          <option value="">Select ad</option>
+          <option value="">{t("form.selectAd")}</option>
           {ads.map((ad) => (
             <option key={ad.id} value={ad.id}>
               {ad.name}
@@ -61,7 +63,7 @@ export function PairForm({
           ))}
         </SelectField>
         <SelectField label="Landing page" registration={form.register("landing_page_id")} error={form.formState.errors.landing_page_id}>
-          <option value="">Select LP</option>
+          <option value="">{t("form.selectLp")}</option>
           {lps.map((lp) => (
             <option key={lp.id} value={lp.id}>
               {lp.name}
@@ -70,7 +72,7 @@ export function PairForm({
         </SelectField>
         <div className="flex justify-end md:col-span-2">
           <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : submitLabel}
+            {isPending ? t("common.saving") : submitLabel}
           </Button>
         </div>
       </form>

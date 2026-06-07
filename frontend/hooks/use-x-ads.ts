@@ -36,6 +36,7 @@ export function useXAdsMutations(projectId?: string) {
       client.invalidateQueries({ queryKey: ["x-ads-accounts"] }),
       client.invalidateQueries({ queryKey: ["x-ads-publish-requests"] }),
       client.invalidateQueries({ queryKey: ["twitter-ads"] }),
+      client.invalidateQueries({ queryKey: ["ad-lp-pairs"] }),
       client.invalidateQueries({ queryKey: ["ad-ab-tests"] }),
       client.invalidateQueries({ queryKey: ["outcomes-dashboard"] }),
     ]);

@@ -6,11 +6,12 @@ primary_region = "nrt"
 
 [env]
   PORT = "8080"
-  ADFLOW_AI_PROVIDER = "mock"
+  ADFLOW_AI_PROVIDER = "openai"
   ADFLOW_GITHUB_PROVIDER = "memory"
   ADFLOW_STORAGE_PROVIDER = "supabase"
   ADFLOW_SUPABASE_TABLE = "adflow_runs"
   DEMAND_SYNTHETIC_FALLBACK = "true"
+  DEMAND_REAL_SOURCES_ENABLED = "true"
 
 [http_service]
   internal_port = 8080

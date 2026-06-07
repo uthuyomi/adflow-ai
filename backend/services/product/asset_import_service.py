@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import requests
 
 from backend.core.config import Settings
+from backend.core.url_safety import safe_get_public_url
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
 
@@ -341,16 +342,11 @@ class _LandingPageHTMLParser(HTMLParser):
 
 
 def fetch_landing_page(url: str) -> ExtractedLandingPage:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ValueError("Enter a valid http or https landing page URL.")
-    response = requests.get(
+    response = safe_get_public_url(
         url,
         headers={"User-Agent": "AdFlowAI/1.0 (+https://adflow-ai-wine.vercel.app)"},
         timeout=20,
-        allow_redirects=True,
     )
-    response.raise_for_status()
     html = response.text[:1_000_000]
     parser = _LandingPageHTMLParser()
     parser.feed(html)

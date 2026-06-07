@@ -4,7 +4,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from backend.core.config import Settings
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
@@ -497,7 +497,9 @@ class XAdsService:
         query = {"x_ads": result}
         if reason:
             query["reason"] = reason
-        return f"{self.settings.frontend_app_url.rstrip('/')}{_safe_return_path(return_path)}?{urlencode(query)}"
+        safe_path = _safe_return_path(return_path)
+        separator = "&" if "?" in safe_path else "?"
+        return f"{self.settings.frontend_app_url.rstrip('/')}{safe_path}{separator}{urlencode(query)}"
 
     def _store_account(self, *, user_id: str, connection_id: str, account: dict[str, Any], client: XAdsClient) -> dict[str, Any]:
         account_id = str(account.get("id"))
@@ -626,10 +628,15 @@ def _token_hash(value: str) -> str:
 
 
 def _safe_return_path(value: str | None) -> str:
-    path = (value or "/ad-optimization").strip()
-    if not path.startswith("/") or path.startswith("//") or "://" in path:
+    raw = (value or "/ad-optimization").strip()
+    if not raw.startswith("/") or raw.startswith("//") or "://" in raw:
         return "/ad-optimization"
-    return path.split("?", 1)[0].split("#", 1)[0]
+    parsed = urlsplit(raw)
+    allowed_query = []
+    for key, item in parse_qsl(parsed.query, keep_blank_values=False):
+        if key == "project_id" and item and len(item) <= 100 and all(char.isalnum() or char in {"-", "_"} for char in item):
+            allowed_query.append((key, item))
+    return f"{parsed.path}?{urlencode(allowed_query)}" if allowed_query else parsed.path
 
 
 def _proposal_text(result: dict[str, Any]) -> str | None:

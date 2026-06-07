@@ -14,8 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLandingPageMutations, useLandingPages } from "@/hooks/use-landing-pages";
+import { useI18n } from "@/hooks/use-i18n";
 
 export default function LpsPage() {
+  const { t } = useI18n();
   const lps = useLandingPages();
   const mutations = useLandingPageMutations();
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -24,10 +26,10 @@ export default function LpsPage() {
     if (!deleteId) return;
     try {
       await mutations.remove.mutateAsync(deleteId);
-      toast.success("LP deleted.");
+      toast.success(t("lps.deleted"));
       setDeleteId(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Delete failed.");
+      toast.error(error instanceof Error ? error.message : t("lps.deleteFailed"));
     }
   };
 
@@ -37,13 +39,13 @@ export default function LpsPage() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Landing Pages"
-        description="Register LP copy, offer, audience, behavior metrics, and performance readings."
+        title={t("lps.title")}
+        description={t("lps.description")}
         action={
           <Button asChild>
             <Link href="/lps/new">
               <Plus className="mr-2 h-4 w-4" />
-              New LP
+              {t("lps.new")}
             </Link>
           </Button>
         }
@@ -53,13 +55,13 @@ export default function LpsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
+                <TableHead>{t("form.name")}</TableHead>
                 <TableHead>URL</TableHead>
-                <TableHead>Hero</TableHead>
-                <TableHead>Primary CTA</TableHead>
-                <TableHead>Bounce</TableHead>
-                <TableHead>Speed</TableHead>
-                <TableHead className="w-28">Actions</TableHead>
+                <TableHead>{t("lps.hero")}</TableHead>
+                <TableHead>{t("form.primaryCta")}</TableHead>
+                <TableHead>{t("lps.bounce")}</TableHead>
+                <TableHead>{t("lps.speed")}</TableHead>
+                <TableHead className="w-28">{t("ads.table.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -74,11 +76,11 @@ export default function LpsPage() {
                   <TableCell>
                     <div className="flex gap-1">
                       <Button asChild size="icon" variant="ghost">
-                        <Link href={`/lps/${lp.id}/edit`} aria-label="Edit LP">
+                        <Link href={`/lps/${lp.id}/edit`} aria-label={t("lps.edit")}>
                           <Pencil className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => setDeleteId(lp.id)} aria-label="Delete LP">
+                      <Button size="icon" variant="ghost" onClick={() => setDeleteId(lp.id)} aria-label={t("lps.delete")}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -89,12 +91,12 @@ export default function LpsPage() {
           </Table>
         </Card>
       ) : (
-        <EmptyState title="No landing pages" description="Register a landing page before creating ad-LP pairs." />
+        <EmptyState title={t("lps.emptyTitle")} description={t("lps.emptyDescription")} />
       )}
       <ConfirmDialog
         open={Boolean(deleteId)}
-        title="Delete LP"
-        description="The LP will be removed, but the delete history remains available."
+        title={t("lps.delete")}
+        description={t("lps.deleteDescription")}
         isPending={mutations.remove.isPending}
         onCancel={() => setDeleteId(null)}
         onConfirm={remove}

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import ipaddress
 from urllib.parse import urlparse
 
 import requests
 
 from backend.core.config import Settings
+from backend.core.url_safety import validate_public_http_url
 from backend.services.demand.demand_models import DemandConnectorRequest, DemandConnectorResponse, DemandRawSignal
 
 
@@ -105,16 +105,8 @@ class FirecrawlDemandConnector:
 
 def _is_public_http_url(url: str) -> bool:
     try:
-        parsed = urlparse(url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            return False
-        if parsed.hostname.lower() == "localhost":
-            return False
-        try:
-            address = ipaddress.ip_address(parsed.hostname)
-            return not (address.is_private or address.is_loopback or address.is_link_local)
-        except ValueError:
-            return True
+        validate_public_http_url(url)
+        return True
     except ValueError:
         return False
 

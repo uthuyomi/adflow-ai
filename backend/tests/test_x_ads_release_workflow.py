@@ -130,6 +130,13 @@ class XAdsReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(session["status"], "completed")
         self.service._create_verified_connection.assert_called_once()
 
+    def test_oauth_redirect_preserves_existing_project_query(self) -> None:
+        redirect = self.service._frontend_redirect("/ads/new?project_id=project-1", "connected", None)
+        self.assertEqual(
+            redirect,
+            "https://app.example.com/ads/new?project_id=project-1&x_ads=connected",
+        )
+
     def _oauth_session(self, *, expires_at: datetime) -> dict:
         return self.repository.insert(
             "x_ads_oauth_sessions",

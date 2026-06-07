@@ -7,6 +7,7 @@ import { z } from "zod";
 import { FormField } from "@/components/registered/FormField";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { useI18n } from "@/hooks/use-i18n";
 import type { LandingPage } from "@/lib/types/adflow";
 
 const schema = z.object({
@@ -40,6 +41,7 @@ export function LpForm({
   submitLabel: string;
   onSubmit: (values: LpFormValues) => void;
 }) {
+  const { t } = useI18n();
   const form = useForm<LpFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -64,26 +66,26 @@ export function LpForm({
   return (
     <Card className="p-5">
       <form className="grid gap-4 md:grid-cols-2" onSubmit={form.handleSubmit(onSubmit)}>
-        <FormField label="Name" registration={form.register("name")} error={form.formState.errors.name} />
+        <FormField label={t("form.name")} registration={form.register("name")} error={form.formState.errors.name} />
         <FormField label="URL" registration={form.register("url")} error={form.formState.errors.url} />
-        <FormField label="Hero title" registration={form.register("hero_title")} error={form.formState.errors.hero_title} />
-        <FormField label="Hero subtitle" registration={form.register("hero_subtitle")} error={form.formState.errors.hero_subtitle} />
-        <FormField label="Primary CTA" registration={form.register("primary_cta")} error={form.formState.errors.primary_cta} />
-        <FormField label="Secondary CTA" registration={form.register("secondary_cta")} error={form.formState.errors.secondary_cta} />
-        <FormField label="Offer text" registration={form.register("offer_text")} error={form.formState.errors.offer_text} />
-        <FormField label="Target audience" registration={form.register("target_audience")} error={form.formState.errors.target_audience} />
-        <FormField label="Bounce rate" type="number" registration={form.register("bounce_rate")} error={form.formState.errors.bounce_rate} />
-        <FormField label="Session duration" type="number" registration={form.register("session_duration")} error={form.formState.errors.session_duration} />
-        <FormField label="Scroll depth" type="number" registration={form.register("scroll_depth")} error={form.formState.errors.scroll_depth} />
-        <FormField label="Page speed" type="number" registration={form.register("page_speed")} error={form.formState.errors.page_speed} />
+        <FormField label={t("form.heroTitle")} registration={form.register("hero_title")} error={form.formState.errors.hero_title} />
+        <FormField label={t("form.heroSubtitle")} registration={form.register("hero_subtitle")} error={form.formState.errors.hero_subtitle} />
+        <FormField label={t("form.primaryCta")} registration={form.register("primary_cta")} error={form.formState.errors.primary_cta} />
+        <FormField label={t("form.secondaryCta")} registration={form.register("secondary_cta")} error={form.formState.errors.secondary_cta} />
+        <FormField label={t("form.offerText")} registration={form.register("offer_text")} error={form.formState.errors.offer_text} />
+        <FormField label={t("form.targetAudience")} registration={form.register("target_audience")} error={form.formState.errors.target_audience} />
+        <FormField label={t("form.bounceRate")} type="number" registration={form.register("bounce_rate")} error={form.formState.errors.bounce_rate} />
+        <FormField label={t("form.sessionDuration")} type="number" registration={form.register("session_duration")} error={form.formState.errors.session_duration} />
+        <FormField label={t("form.scrollDepth")} type="number" registration={form.register("scroll_depth")} error={form.formState.errors.scroll_depth} />
+        <FormField label={t("form.pageSpeed")} type="number" registration={form.register("page_speed")} error={form.formState.errors.page_speed} />
         <FormField label="FCP" type="number" registration={form.register("fcp")} error={form.formState.errors.fcp} />
         <FormField label="LCP" type="number" registration={form.register("lcp")} error={form.formState.errors.lcp} />
         <div className="md:col-span-2">
-          <FormField label="Notes" textarea registration={form.register("notes")} error={form.formState.errors.notes} />
+          <FormField label={t("form.notes")} textarea registration={form.register("notes")} error={form.formState.errors.notes} />
         </div>
         <div className="flex justify-end md:col-span-2">
           <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : submitLabel}
+            {isPending ? t("common.saving") : submitLabel}
           </Button>
         </div>
       </form>

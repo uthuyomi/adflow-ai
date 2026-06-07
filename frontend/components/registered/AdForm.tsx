@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { FormField, SelectField } from "@/components/registered/FormField";
+import { useI18n } from "@/hooks/use-i18n";
 import type { TwitterAd } from "@/lib/types/adflow";
 
 const schema = z.object({
@@ -39,6 +40,7 @@ export function AdForm({
   submitLabel: string;
   onSubmit: (values: AdFormValues) => void;
 }) {
+  const { t } = useI18n();
   const form = useForm<AdFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -62,29 +64,29 @@ export function AdForm({
   return (
     <Card className="p-5">
       <form className="grid gap-4 md:grid-cols-2" onSubmit={form.handleSubmit(onSubmit)}>
-        <FormField label="Name" registration={form.register("name")} error={form.formState.errors.name} />
-        <FormField label="Destination URL" registration={form.register("destination_url")} error={form.formState.errors.destination_url} />
-        <FormField label="Campaign" registration={form.register("campaign_name")} error={form.formState.errors.campaign_name} />
-        <FormField label="Ad group" registration={form.register("ad_group_name")} error={form.formState.errors.ad_group_name} />
-        <FormField label="Headline" registration={form.register("headline")} error={form.formState.errors.headline} />
+        <FormField label={t("form.name")} registration={form.register("name")} error={form.formState.errors.name} />
+        <FormField label={t("form.destinationUrl")} registration={form.register("destination_url")} error={form.formState.errors.destination_url} />
+        <FormField label={t("form.campaign")} registration={form.register("campaign_name")} error={form.formState.errors.campaign_name} />
+        <FormField label={t("form.adGroup")} registration={form.register("ad_group_name")} error={form.formState.errors.ad_group_name} />
+        <FormField label={t("form.headline")} registration={form.register("headline")} error={form.formState.errors.headline} />
         <FormField label="CTA" registration={form.register("cta")} error={form.formState.errors.cta} />
         <div className="md:col-span-2">
-          <FormField label="Body" textarea registration={form.register("body")} error={form.formState.errors.body} />
+          <FormField label={t("form.body")} textarea registration={form.register("body")} error={form.formState.errors.body} />
         </div>
-        <FormField label="Image URL" registration={form.register("image_url")} error={form.formState.errors.image_url} />
-        <FormField label="Video URL" registration={form.register("video_url")} error={form.formState.errors.video_url} />
-        <FormField label="Impressions" type="number" registration={form.register("impressions")} error={form.formState.errors.impressions} />
-        <FormField label="Clicks" type="number" registration={form.register("clicks")} error={form.formState.errors.clicks} />
-        <FormField label="Conversions" type="number" registration={form.register("conversions")} error={form.formState.errors.conversions} />
-        <FormField label="Spend" type="number" registration={form.register("spend")} error={form.formState.errors.spend} />
-        <SelectField label="Status" registration={form.register("status")} error={form.formState.errors.status}>
-          <option value="active">Active</option>
-          <option value="paused">Paused</option>
-          <option value="draft">Draft</option>
+        <FormField label={t("form.imageUrl")} registration={form.register("image_url")} error={form.formState.errors.image_url} />
+        <FormField label={t("form.videoUrl")} registration={form.register("video_url")} error={form.formState.errors.video_url} />
+        <FormField label={t("form.impressions")} type="number" registration={form.register("impressions")} error={form.formState.errors.impressions} />
+        <FormField label={t("form.clicks")} type="number" registration={form.register("clicks")} error={form.formState.errors.clicks} />
+        <FormField label={t("form.conversions")} type="number" registration={form.register("conversions")} error={form.formState.errors.conversions} />
+        <FormField label={t("form.spend")} type="number" registration={form.register("spend")} error={form.formState.errors.spend} />
+        <SelectField label={t("form.status")} registration={form.register("status")} error={form.formState.errors.status}>
+          <option value="active">{t("status.active")}</option>
+          <option value="paused">{t("status.paused")}</option>
+          <option value="draft">{t("status.draft")}</option>
         </SelectField>
         <div className="flex items-end justify-end">
           <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : submitLabel}
+            {isPending ? t("common.saving") : submitLabel}
           </Button>
         </div>
       </form>
