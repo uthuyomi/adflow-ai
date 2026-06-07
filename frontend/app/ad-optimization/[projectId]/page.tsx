@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { XAdsOperationsPanel } from "@/components/x-ads/XAdsOperationsPanel";
 import { useAdABTestMutations, useAdABTests } from "@/hooks/use-ad-ab-tests";
 import { useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
 import { useChangeHistory } from "@/hooks/use-change-history";
@@ -87,6 +88,7 @@ export default function AdOptimizationProjectPage() {
           <TabsTrigger value="overview">{t("adOptimization.tabOverview")}</TabsTrigger>
           <TabsTrigger value="assets">{t("adOptimization.tabAssets")}</TabsTrigger>
           <TabsTrigger value="ab-tests">A/B Tests</TabsTrigger>
+          <TabsTrigger value="x-ads">{t("xAds.tab")}</TabsTrigger>
           <TabsTrigger value="analysis">{t("adOptimization.tabAnalysis")}</TabsTrigger>
           <TabsTrigger value="recommendations">{t("adOptimization.tabRecommendations")}</TabsTrigger>
           <TabsTrigger value="results">{t("adOptimization.tabResults")}</TabsTrigger>
@@ -162,6 +164,10 @@ export default function AdOptimizationProjectPage() {
             }}
             tests={abTests.data ?? []}
           />
+        </TabsContent>
+
+        <TabsContent value="x-ads">
+          <XAdsOperationsPanel projectId={params.projectId} />
         </TabsContent>
 
         <TabsContent value="analysis">

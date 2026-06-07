@@ -26,6 +26,8 @@ CREDIT_COSTS: dict[str, CreditCost] = {
     "demand_solution_fit": CreditCost(120, "PRODUCT_IDEA_CONVERSION"),
     "outcome_learning_rebuild": CreditCost(20, "LIGHT_DEMAND_SCAN"),
     "codex_task": CreditCost(100, "LP_OUTLINE_GENERATION"),
+    "x_ads_sync": CreditCost(20, "X_ADS_DETAILED_SYNC"),
+    "x_ads_publish": CreditCost(40, "X_ADS_APPROVED_PUBLISH"),
 }
 
 

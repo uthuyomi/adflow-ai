@@ -47,6 +47,7 @@ from backend.services.product.ad_optimization_service import AdOptimizationServi
 from backend.services.product.asset_import_service import AssetImportService
 from backend.services.product.demand_discovery_service import DemandDiscoveryService
 from backend.services.supabase.supabase_repository import SupabaseRepository
+from backend.services.x_ads.x_ads_service import XAdsService
 
 app = FastAPI(title="AdFlow AI")
 _AUTHENTICATED_USER_EMAILS: dict[str, str] = {}
@@ -153,6 +154,33 @@ class SyncXAdsRequest(BaseModel):
     ads: list[dict[str, Any]] | None = None
     auto_fetch_lps: bool = True
     auto_pair: bool = True
+
+
+class CreateXAdsConnectionRequest(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    access_token: str = Field(min_length=1)
+    access_token_secret: str = Field(min_length=1)
+
+
+class XAdsDetailedSyncRequest(BaseModel):
+    connection_id: str
+    account_id: str
+    project_id: str | None = None
+    days: int = Field(default=30, ge=1, le=90)
+
+
+class CreateXAdsPublishRequest(BaseModel):
+    source_ai_result_id: str
+    connection_id: str
+    account_id: str
+    line_item_id: str
+    proposed_text: str | None = Field(default=None, max_length=280)
+    hypothesis: str | None = None
+    primary_metric: Literal["ctr", "cvr", "cpc"] = "ctr"
+
+
+class ApproveXAdsPublishRequest(BaseModel):
+    approved: bool
 
 
 class CreateAdABTestRequest(BaseModel):
@@ -472,6 +500,126 @@ def sync_x_ads(
         )
     except requests.HTTPError as exc:
         raise HTTPException(status_code=400, detail=f"X Ads API request failed: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/x-ads/connections")
+def list_x_ads_connections(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_x_ads_service(load_settings()).list_connections(user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/connections")
+def create_x_ads_connection(
+    request: CreateXAdsConnectionRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_x_ads_service(load_settings()).create_connection(
+            user_id=user_id,
+            label=request.label,
+            access_token=request.access_token,
+            access_token_secret=request.access_token_secret,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/connections/{connection_id}/verify")
+def verify_x_ads_connection(connection_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_x_ads_service(load_settings()).verify_connection(user_id=user_id, connection_id=connection_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/connections/{connection_id}/revoke")
+def revoke_x_ads_connection(connection_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_x_ads_service(load_settings()).revoke_connection(user_id=user_id, connection_id=connection_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/x-ads/accounts")
+def list_x_ads_accounts(
+    connection_id: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_x_ads_service(load_settings()).list_accounts(user_id=user_id, connection_id=connection_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/detailed-sync")
+def detailed_sync_x_ads(
+    request: XAdsDetailedSyncRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        _require_feature_credits(user_id=user_id, feature_key="x_ads_sync")
+        result = _build_x_ads_service(load_settings()).sync_account(
+            user_id=user_id,
+            connection_id=request.connection_id,
+            account_id=request.account_id,
+            project_id=request.project_id,
+            days=request.days,
+        )
+        _consume_feature_credits(user_id=user_id, feature_key="x_ads_sync", metadata={"account_id": request.account_id, "days": request.days})
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/x-ads/publish-requests")
+def list_x_ads_publish_requests(
+    project_id: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_x_ads_service(load_settings()).list_publish_requests(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/publish-requests")
+def create_x_ads_publish_request(
+    request: CreateXAdsPublishRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_x_ads_service(load_settings()).create_publish_request(user_id=user_id, **request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/publish-requests/{request_id}/approval")
+def approve_x_ads_publish_request(
+    request_id: str,
+    request: ApproveXAdsPublishRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_x_ads_service(load_settings()).approve_publish_request(user_id=user_id, request_id=request_id, approved=request.approved)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/x-ads/publish-requests/{request_id}/publish")
+def publish_x_ads_request(request_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        service = _build_x_ads_service(load_settings())
+        before = service.get_publish_request(user_id=user_id, request_id=request_id)
+        if before.get("publish_status") == "published":
+            return before
+        _require_feature_credits(user_id=user_id, feature_key="x_ads_publish")
+        result = service.publish(user_id=user_id, request_id=request_id)
+        _consume_feature_credits(user_id=user_id, feature_key="x_ads_publish", metadata={"publish_request_id": request_id})
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -982,6 +1130,10 @@ def _build_asset_import_service(settings: Settings) -> AssetImportService:
 
 def _build_ad_ab_test_service(settings: Settings) -> AdABTestService:
     return AdABTestService(repository=_repository_for_settings(settings))
+
+
+def _build_x_ads_service(settings: Settings) -> XAdsService:
+    return XAdsService(repository=_repository_for_settings(settings), settings=settings)
 
 
 def _repository_for_settings(settings: Settings) -> SupabaseRepository:

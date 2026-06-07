@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { XAdsPublishDraftDialog } from "@/components/x-ads/XAdsPublishDraftDialog";
 import { useAdLpPair } from "@/hooks/use-ad-lp-pairs";
 import { useAnalysisRuns, useRunPairAnalysis } from "@/hooks/use-analysis-runs";
 import { usePairChangeHistory } from "@/hooks/use-change-history";
@@ -38,6 +39,7 @@ export default function PairDetailPage() {
   const codexTask = useGenerateCodexTask();
   const aiMode = useUiStore((state) => state.analysisAIMode);
   const [demandQuery, setDemandQuery] = useState("");
+  const [xAdsDraftResult, setXAdsDraftResult] = useState<AIAgentResult | null>(null);
   const demandIntelligence = useLatestDemandIntelligence(params.pairId);
   const runDemandIntelligence = useRunDemandIntelligence(params.pairId);
   const demandRunId = demandIntelligence.data?.id;
@@ -238,7 +240,9 @@ export default function PairDetailPage() {
                 toast.error(error instanceof Error ? error.message : "Outcome draft creation failed.");
               }
             }}
+            onXAdsDraft={(result) => setXAdsDraftResult(result)}
           />
+          <XAdsPublishDraftDialog open={Boolean(xAdsDraftResult)} onOpenChange={(open) => !open && setXAdsDraftResult(null)} result={xAdsDraftResult} />
         </TabsContent>
         <TabsContent value="demand">
           <DemandIntelligencePanel
@@ -547,6 +551,7 @@ function AIProposalComparison({
   onDecision,
   onCodexTask,
   onOutcomeDraft,
+  onXAdsDraft,
 }: {
   results: AIAgentResult[];
   messageMatchScore: number;
@@ -556,6 +561,7 @@ function AIProposalComparison({
   onDecision: (resultId: string, status: AIAgentResult["decision_status"]) => Promise<void>;
   onCodexTask: (resultId: string) => Promise<void>;
   onOutcomeDraft: (resultId: string) => Promise<void>;
+  onXAdsDraft: (result: AIAgentResult) => void;
 }) {
   if (!results.length) {
     return <EmptyState title="No AI proposals" description="Run analysis to compare Grok, Gemini, ChatGPT, and reviewer outputs." />;
@@ -616,6 +622,9 @@ function AIProposalComparison({
               </Button>
               <Button size="sm" variant="outline" disabled={isCreatingOutcome || result.decision_status !== "apply_ready"} onClick={() => onOutcomeDraft(result.id)}>
                 Create Outcome Draft
+              </Button>
+              <Button size="sm" disabled={result.decision_status !== "apply_ready"} onClick={() => onXAdsDraft(result)}>
+                Create X Ads Draft
               </Button>
             </div>
           </Card>

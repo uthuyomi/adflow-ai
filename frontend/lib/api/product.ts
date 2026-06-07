@@ -137,6 +137,41 @@ export type AdABTest = {
   created_at: string;
 };
 
+export type XAdsConnection = {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "invalid" | "revoked";
+  last_verified_at: string | null;
+  last_error: string | null;
+};
+
+export type XAdsAccount = {
+  id: string;
+  connection_id: string;
+  x_account_id: string;
+  name: string;
+  currency: string | null;
+  timezone: string | null;
+  permissions: string[];
+  promotable_users: Array<Record<string, unknown>>;
+  last_synced_at: string | null;
+};
+
+export type XAdsPublishRequest = {
+  id: string;
+  project_id: string | null;
+  source_ai_result_id: string;
+  proposed_text: string;
+  destination_url: string;
+  hypothesis: string | null;
+  approval_status: "draft" | "approved" | "rejected";
+  publish_status: "not_started" | "publishing" | "published" | "failed";
+  published_tweet_id: string | null;
+  promoted_tweet_id: string | null;
+  error_message: string | null;
+  created_at: string;
+};
+
 export async function listAdABTests(projectId: string) {
   return requestWithAuth<AdABTest[]>(`/ad-optimization/projects/${projectId}/ab-tests`);
 }
@@ -194,6 +229,63 @@ export async function syncXAds(payload: {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function listXAdsConnections() {
+  return requestWithAuth<XAdsConnection[]>("/integrations/x-ads/connections");
+}
+
+export async function createXAdsConnection(payload: { label: string; access_token: string; access_token_secret: string }) {
+  return requestWithAuth<XAdsConnection & { accounts: XAdsAccount[] }>("/integrations/x-ads/connections", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function verifyXAdsConnection(connectionId: string) {
+  return requestWithAuth<XAdsConnection & { accounts: XAdsAccount[] }>(`/integrations/x-ads/connections/${connectionId}/verify`, { method: "POST" });
+}
+
+export async function revokeXAdsConnection(connectionId: string) {
+  return requestWithAuth<XAdsConnection>(`/integrations/x-ads/connections/${connectionId}/revoke`, { method: "POST" });
+}
+
+export async function listXAdsAccounts(connectionId?: string) {
+  return requestWithAuth<XAdsAccount[]>(`/integrations/x-ads/accounts${connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : ""}`);
+}
+
+export async function detailedSyncXAds(payload: { connection_id: string; account_id: string; project_id?: string | null; days?: number }) {
+  return requestWithAuth<{ ads: unknown[]; account_id: string; synced_count: number; days: number }>("/integrations/x-ads/detailed-sync", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listXAdsPublishRequests(projectId?: string) {
+  return requestWithAuth<XAdsPublishRequest[]>(`/integrations/x-ads/publish-requests${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`);
+}
+
+export async function createXAdsPublishRequest(payload: {
+  source_ai_result_id: string;
+  connection_id: string;
+  account_id: string;
+  line_item_id: string;
+  proposed_text: string;
+  hypothesis?: string | null;
+  primary_metric?: "ctr" | "cvr" | "cpc";
+}) {
+  return requestWithAuth<XAdsPublishRequest>("/integrations/x-ads/publish-requests", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function approveXAdsPublishRequest(requestId: string, approved: boolean) {
+  return requestWithAuth<XAdsPublishRequest>(`/integrations/x-ads/publish-requests/${requestId}/approval`, {
+    method: "POST",
+    body: JSON.stringify({ approved }),
+  });
+}
+
+export async function publishXAdsRequest(requestId: string) {
+  return requestWithAuth<XAdsPublishRequest>(`/integrations/x-ads/publish-requests/${requestId}/publish`, { method: "POST" });
 }
 
 export async function analyzeDemandDiscovery(input: string, locale: Locale = "ja", signal?: AbortSignal) {

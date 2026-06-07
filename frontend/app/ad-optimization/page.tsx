@@ -22,7 +22,7 @@ import { useOutcomesDashboard } from "@/hooks/useAdflowData";
 import { useLandingPages } from "@/hooks/use-landing-pages";
 import { useProjects } from "@/hooks/use-projects";
 import { useTwitterAds } from "@/hooks/use-twitter-ads";
-import { importAdsCsv, importLandingPageFromUrl, syncXAds, type AssetImportSummary } from "@/lib/api/product";
+import { importAdsCsv, importLandingPageFromUrl, type AssetImportSummary } from "@/lib/api/product";
 import type { AdProject } from "@/lib/types/adflow";
 
 export default function AdOptimizationPage() {
@@ -190,27 +190,19 @@ function AssetImportPanel({
   const [projectId, setProjectId] = useState("");
   const [lpUrl, setLpUrl] = useState("");
   const [csvText, setCsvText] = useState(sampleCsv);
-  const [xAccountId, setXAccountId] = useState("");
-  const [isPending, setIsPending] = useState<"lp" | "csv" | "x" | null>(null);
+  const [isPending, setIsPending] = useState<"lp" | "csv" | null>(null);
   const [lastResult, setLastResult] = useState<AssetImportSummary | null>(null);
 
   const selectedProjectId = projectId || null;
 
-  async function runImport(kind: "lp" | "csv" | "x") {
+  async function runImport(kind: "lp" | "csv") {
     setIsPending(kind);
     try {
       const result =
         kind === "lp"
           ? await importLandingPageFromUrl({ url: lpUrl, project_id: selectedProjectId })
-          : kind === "csv"
-            ? await importAdsCsv({
+          : await importAdsCsv({
                 csv_text: csvText,
-                project_id: selectedProjectId,
-                auto_fetch_lps: true,
-                auto_pair: true,
-              })
-            : await syncXAds({
-                account_id: xAccountId,
                 project_id: selectedProjectId,
                 auto_fetch_lps: true,
                 auto_pair: true,
@@ -294,27 +286,6 @@ function AssetImportPanel({
           >
             {isPending === "csv" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
             Import CSV and pair
-          </Button>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-          <label className="space-y-1 text-sm">
-            <span className="font-medium">X Ads account ID</span>
-            <Input
-              value={xAccountId}
-              onChange={(event) => setXAccountId(event.target.value)}
-              placeholder="18ce54d4x5t"
-            />
-          </label>
-          <Button
-            className="self-end"
-            disabled={isPending !== null || !xAccountId.trim()}
-            onClick={() => runImport("x")}
-            type="button"
-            variant="outline"
-          >
-            {isPending === "x" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Sync X Ads
           </Button>
         </div>
 

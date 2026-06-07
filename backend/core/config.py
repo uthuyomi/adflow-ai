@@ -30,6 +30,11 @@ class Settings(BaseModel):
     demand_connector_timeout_seconds: int = 20
     demand_connector_max_retries: int = 2
     x_api_bearer_token: str | None = None
+    x_ads_consumer_key: str | None = None
+    x_ads_consumer_secret: str | None = None
+    x_ads_token_encryption_key: str | None = None
+    x_ads_api_base_url: str = "https://ads-api.x.com/12"
+    x_api_base_url: str = "https://api.x.com/2"
     google_custom_search_api_key: str | None = None
     google_custom_search_engine_id: str | None = None
     firecrawl_api_key: str | None = None
@@ -95,6 +100,11 @@ def load_settings() -> Settings:
         demand_connector_timeout_seconds=int(os.getenv("DEMAND_CONNECTOR_TIMEOUT_SECONDS", "20")),
         demand_connector_max_retries=int(os.getenv("DEMAND_CONNECTOR_MAX_RETRIES", "2")),
         x_api_bearer_token=os.getenv("X_API_BEARER_TOKEN"),
+        x_ads_consumer_key=os.getenv("X_ADS_CONSUMER_KEY"),
+        x_ads_consumer_secret=os.getenv("X_ADS_CONSUMER_SECRET"),
+        x_ads_token_encryption_key=os.getenv("X_ADS_TOKEN_ENCRYPTION_KEY"),
+        x_ads_api_base_url=os.getenv("X_ADS_API_BASE_URL", "https://ads-api.x.com/12"),
+        x_api_base_url=os.getenv("X_API_BASE_URL", "https://api.x.com/2"),
         google_custom_search_api_key=os.getenv("GOOGLE_CUSTOM_SEARCH_API_KEY"),
         google_custom_search_engine_id=os.getenv("GOOGLE_CUSTOM_SEARCH_ENGINE_ID"),
         firecrawl_api_key=os.getenv("FIRECRAWL_API_KEY"),
