@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from backend.core.config import Settings
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
+from backend.services.improvements.improvement_workflow_service import ImprovementWorkflowService
 from backend.services.product.ad_ab_test_service import AdABTestService
 from backend.services.supabase.supabase_repository import SupabaseRepository
 from backend.services.x_ads.token_cipher import TokenCipher
@@ -281,8 +282,8 @@ class XAdsService:
         primary_metric: str = "ctr",
     ) -> dict[str, Any]:
         result = self.repository.get_one("ai_agent_results", user_id=user_id, filters={"id": source_ai_result_id})
-        if result.get("decision_status") != "apply_ready":
-            raise ValueError("AI result must be apply_ready before creating an X Ads publish request.")
+        if result.get("decision_status") != "APPLY_READY":
+            raise ValueError("AI result must be APPLY_READY before creating an X Ads publish request.")
         pair = self.repository.get_one("ad_lp_pairs", user_id=user_id, filters={"id": result["ad_lp_pair_id"]})
         source_ad = self.repository.get_one("twitter_ads", user_id=user_id, filters={"id": pair["twitter_ad_id"]})
         if not result.get("project_id"):
@@ -345,6 +346,15 @@ class XAdsService:
             return request
         if request.get("publish_status") == "publishing":
             raise ValueError("This X Ads request is already publishing.")
+        workflow = ImprovementWorkflowService(self.repository)
+        source_result = workflow.get_improvement(user_id=user_id, improvement_id=request["source_ai_result_id"])
+        if source_result.get("decision_status") == "FAILED":
+            workflow.transition(
+                user_id=user_id,
+                improvement_id=request["source_ai_result_id"],
+                new_status="APPLY_READY",
+                reason="Retrying approved X Ads publish request.",
+            )
         account = self.repository.get_one(
             "x_ads_accounts",
             user_id=user_id,
@@ -433,6 +443,12 @@ class XAdsService:
                 },
             )
             self._event(user_id=user_id, request_id=request_id, event_type="published", status="completed", response={"tweet_id": tweet_id, "promoted_tweet_id": promoted_id})
+            workflow.transition(
+                user_id=user_id,
+                improvement_id=request["source_ai_result_id"],
+                new_status="APPLIED",
+                reason=f"Published through X Ads request {request_id}.",
+            )
             self.repository.insert(
                 "change_history",
                 {
@@ -451,6 +467,14 @@ class XAdsService:
         except Exception as exc:
             self.repository.update("x_ads_publish_requests", user_id=user_id, filters={"id": request_id}, payload={"publish_status": "failed", "error_message": str(exc)})
             self._event(user_id=user_id, request_id=request_id, event_type="publish_failed", status="failed", error=str(exc))
+            current = workflow.get_improvement(user_id=user_id, improvement_id=request["source_ai_result_id"])
+            if current.get("decision_status") == "APPLY_READY":
+                workflow.transition(
+                    user_id=user_id,
+                    improvement_id=request["source_ai_result_id"],
+                    new_status="FAILED",
+                    reason=str(exc)[:1000],
+                )
             raise
 
     def _connection_client(self, *, user_id: str, connection_id: str) -> tuple[dict[str, Any], XAdsClient]:

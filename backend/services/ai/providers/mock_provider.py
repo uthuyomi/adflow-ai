@@ -19,6 +19,7 @@ class MockProvider:
     ) -> dict[str, Any]:
         task = user_payload.get("task", "analysis")
         provider = user_payload.get("provider", "mock")
+        failure_reason = str(user_payload.get("failure_reason") or "Mock provider was selected.")
         message_match = float(user_payload.get("message_match_score") or 0)
         confidence = 0.72 if message_match >= 45 else 0.58
         return {
@@ -41,4 +42,7 @@ class MockProvider:
                 "bounce_reduction": 3.0 if message_match < 45 else 1.0,
                 "notes": "Estimated from rule-based mock output.",
             },
+            "provider_type": "MOCK",
+            "failure_reason": failure_reason,
+            "source_provider": provider,
         }

@@ -54,6 +54,7 @@
   "nav.improvements": "Improvements",
   "nav.prs": "PR Reviews",
   "nav.settings": "Settings",
+  "nav.codexTasks": "Codex Tasks",
 
   "common.brand": "AdFlow AI",
   "common.language": "Language",

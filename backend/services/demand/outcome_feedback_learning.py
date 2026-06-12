@@ -16,7 +16,8 @@ class OutcomeFeedbackLearning:
         search_score = self._average([float(signal.get("search_demand_score") or 0) for signal in search_signals])
         market_by_name = {str(item.get("segment_name") or "").lower(): item for item in market_estimates}
         links = []
-        for outcome in outcomes[:30]:
+        eligible_outcomes = [outcome for outcome in outcomes if outcome.get("source_provider_type") != "MOCK"]
+        for outcome in eligible_outcomes[:30]:
             cluster = self._nearest_cluster(outcome, clusters)
             metric_delta = outcome.get("metric_delta") or {}
             status = self._learning_status(outcome, metric_delta)

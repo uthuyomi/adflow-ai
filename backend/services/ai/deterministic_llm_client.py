@@ -6,6 +6,10 @@ from pydantic import BaseModel
 
 
 class DeterministicLLMClient:
+    provider_type = "MOCK"
+    source_provider = "deterministic"
+    failure_reason = "Deterministic rule-based AI fallback was used."
+
     def generate_json(
         self,
         *,

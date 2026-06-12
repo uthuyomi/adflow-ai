@@ -1,63 +1,64 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { useApproveImprovement, useCreatePullRequest } from "@/hooks/useImprovement";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useTransitionImprovement } from "@/hooks/useImprovement";
 import { useUiStore } from "@/lib/store";
+import type { ImprovementStatus } from "@/lib/types/adflow";
 
-export function ApprovalDialog({ improvementId }: { improvementId: string }) {
+export function ApprovalDialog({ improvementId, currentStatus }: { improvementId: string; currentStatus: ImprovementStatus }) {
   const mode = useUiStore((state) => state.reviewDialogMode);
   const setMode = useUiStore((state) => state.setReviewDialogMode);
-  const approve = useApproveImprovement();
-  const createPr = useCreatePullRequest();
-  const router = useRouter();
-
+  const transition = useTransitionImprovement();
+  const [reason, setReason] = useState("");
   const open = mode !== null;
-  const close = () => setMode(null);
+  const close = () => {
+    setReason("");
+    setMode(null);
+  };
 
+  const target =
+    mode === "approve"
+      ? "APPROVED"
+      : mode === "reject"
+        ? "REJECTED"
+        : mode === "applied"
+          ? "APPLIED"
+          : mode === "failed"
+            ? "FAILED"
+            : "APPLY_READY";
   const handleConfirm = async () => {
-    if (mode === "approve") {
-      await approve.mutateAsync(improvementId);
-      toast.success("Improvement approved for PR preparation.");
-      close();
+    if (target === "REJECTED" && !reason.trim()) {
+      toast.error("A rejection reason is required.");
       return;
     }
-    if (mode === "pr") {
-      await createPr.mutateAsync(improvementId);
-      toast.success("PR creation request completed.");
-      close();
-      router.push("/prs");
-      return;
-    }
-    toast.info("Improvement marked as rejected in this review session.");
+    await transition.mutateAsync({ improvementId, newStatus: target, reason: reason.trim() || undefined });
+    toast.success(`Improvement moved from ${currentStatus} to ${target}.`);
     close();
   };
 
   return (
-    <Dialog open={open} onOpenChange={setMode.bind(null, null)}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
       <DialogContent onClose={close}>
         <DialogHeader>
-          <DialogTitle>
-            {mode === "pr" ? "Create pull request?" : mode === "reject" ? "Reject improvement?" : "Approve improvement?"}
-          </DialogTitle>
+          <DialogTitle>{target === "REJECTED" ? "Reject improvement?" : `Move improvement to ${target}?`}</DialogTitle>
           <DialogDescription>
-            This action does not merge or push code. PR creation remains the final
-            automated step before human GitHub review.
+            This transition is persisted to the database and recorded in the improvement audit log.
           </DialogDescription>
         </DialogHeader>
-        <div className="mt-6 flex justify-end gap-3">
+        <Textarea
+          onChange={(event) => setReason(event.target.value)}
+          placeholder={target === "REJECTED" ? "Rejection reason (required)" : "Reason or implementation note (optional)"}
+          value={reason}
+        />
+        <div className="mt-4 flex justify-end gap-3">
           <Button variant="outline" onClick={close}>Cancel</Button>
-          <Button onClick={handleConfirm}>
-            {mode === "pr" ? "Create PR" : mode === "reject" ? "Reject" : "Approve"}
+          <Button disabled={transition.isPending} onClick={handleConfirm}>
+            {transition.isPending ? "Saving..." : "Confirm transition"}
           </Button>
         </div>
       </DialogContent>

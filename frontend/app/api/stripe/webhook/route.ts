@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 
 import { PLANS } from "@/lib/billing/plans";
+import { refundedCredits } from "@/lib/billing/stripe-policy";
 import { creditPackFromStripePrice, planFromStripePrice } from "@/lib/billing/stripe-catalog";
 import { getStripe } from "@/lib/stripe/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -79,6 +80,50 @@ async function addCreditsFromCheckoutSession(session: Stripe.Checkout.Session, e
   assertSupabaseSuccess(error, "Unable to add purchased credits");
 }
 
+async function markWebhookEvent(event: Stripe.Event, status: "processing" | "completed" | "failed", errorMessage?: string) {
+  const supabase = getSupabaseAdminClient();
+  const { error } = await supabase.from("stripe_webhook_events").upsert(
+    {
+      event_id: event.id,
+      event_type: event.type,
+      status,
+      error_message: errorMessage || null,
+      processed_at: status === "completed" ? new Date().toISOString() : null,
+    },
+    { onConflict: "event_id" },
+  );
+  assertSupabaseSuccess(error, "Unable to record Stripe webhook event");
+}
+
+async function handleRefund(charge: Stripe.Charge, eventId: string) {
+  const paymentIntent = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+  if (!paymentIntent || charge.amount_refunded <= 0) return;
+  const stripe = getStripe();
+  const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntent, limit: 1 });
+  const session = sessions.data[0];
+  const userId = session?.metadata?.userId || charge.metadata.userId;
+  const totalCredits = Number(session?.metadata?.credits || charge.metadata.credits || 0);
+  if (!userId || !totalCredits) return;
+  const amount = refundedCredits(totalCredits, charge.amount_refunded, charge.amount);
+  if (!amount) return;
+  const { error } = await getSupabaseAdminClient().rpc("refund_purchased_credits", {
+    p_user_id: userId,
+    p_amount: amount,
+    p_reason: "stripe_charge_refunded",
+    p_stripe_event_id: eventId,
+  });
+  assertSupabaseSuccess(error, "Unable to refund purchased credits");
+}
+
+async function markSubscriptionPaymentFailed(subscriptionId: string) {
+  const supabase = getSupabaseAdminClient();
+  const { error } = await supabase
+    .from("user_billing_profiles")
+    .update({ subscription_status: "past_due" })
+    .eq("stripe_subscription_id", subscriptionId);
+  assertSupabaseSuccess(error, "Unable to mark subscription payment failure");
+}
+
 export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -101,77 +146,101 @@ export async function POST(request: Request) {
   }
 
   const supabase = getSupabaseAdminClient();
+  const { data: existingEvent } = await supabase
+    .from("stripe_webhook_events")
+    .select("status")
+    .eq("event_id", event.id)
+    .maybeSingle();
+  if (existingEvent?.status === "completed") {
+    return NextResponse.json({ received: true, duplicate: true });
+  }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    const userId = session.metadata?.userId;
-    await addCreditsFromCheckoutSession(session, event.id);
-    if (session.mode === "subscription" && userId && typeof session.subscription === "string") {
-      const subscription = await stripe.subscriptions.retrieve(session.subscription);
-      await upsertSubscriptionProfile(subscription);
+  await markWebhookEvent(event, "processing");
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const userId = session.metadata?.userId;
+      await addCreditsFromCheckoutSession(session, event.id);
+      if (session.mode === "subscription" && userId && typeof session.subscription === "string") {
+        const subscription = await stripe.subscriptions.retrieve(session.subscription);
+        await upsertSubscriptionProfile(subscription);
+      }
     }
-  }
 
-  if (event.type === "checkout.session.async_payment_succeeded") {
-    await addCreditsFromCheckoutSession(event.data.object as Stripe.Checkout.Session, event.id);
-  }
+    if (event.type === "checkout.session.async_payment_succeeded") {
+      await addCreditsFromCheckoutSession(event.data.object as Stripe.Checkout.Session, event.id);
+    }
 
-  if (event.type === "customer.subscription.updated") {
-    await upsertSubscriptionProfile(event.data.object as Stripe.Subscription);
-  }
+    if (event.type === "customer.subscription.updated") {
+      await upsertSubscriptionProfile(event.data.object as Stripe.Subscription);
+    }
 
-  if (event.type === "invoice.paid") {
-    const invoice = event.data.object as Stripe.Invoice & {
-      subscription?: string | Stripe.Subscription | null;
-      parent?: {
-        subscription_details?: {
-          subscription?: string | Stripe.Subscription | null;
+    if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
+      const invoice = event.data.object as Stripe.Invoice & {
+        subscription?: string | Stripe.Subscription | null;
+        parent?: {
+          subscription_details?: {
+            subscription?: string | Stripe.Subscription | null;
+          } | null;
         } | null;
-      } | null;
-    };
-    const parentSubscription = invoice.parent?.subscription_details?.subscription;
-    const subscriptionId =
-      typeof invoice.subscription === "string"
-        ? invoice.subscription
-        : invoice.subscription?.id ||
-          (typeof parentSubscription === "string" ? parentSubscription : parentSubscription?.id);
-    if (subscriptionId) {
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-      await upsertSubscriptionProfile(subscription, event.id);
+      };
+      const parentSubscription = invoice.parent?.subscription_details?.subscription;
+      const subscriptionId =
+        typeof invoice.subscription === "string"
+          ? invoice.subscription
+          : invoice.subscription?.id ||
+            (typeof parentSubscription === "string" ? parentSubscription : parentSubscription?.id);
+      if (subscriptionId) {
+        if (event.type === "invoice.payment_failed") {
+          await markSubscriptionPaymentFailed(subscriptionId);
+        } else {
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          await upsertSubscriptionProfile(subscription, event.id);
+        }
+      }
     }
-  }
 
-  if (event.type === "customer.subscription.deleted") {
-    const subscription = event.data.object as Stripe.Subscription;
-    const { data: profile } = await supabase
-      .from("user_billing_profiles")
-      .select("user_id")
-      .eq("stripe_subscription_id", subscription.id)
-      .maybeSingle();
-    const userId = (profile?.user_id || subscription.metadata.userId) as string | undefined;
-    if (userId) {
-      const { error: profileError } = await supabase.from("user_billing_profiles").upsert(
-        {
-          user_id: userId,
-          stripe_customer_id: String(subscription.customer),
-          stripe_subscription_id: null,
-          plan: "free",
-          subscription_status: "canceled",
-          current_period_start: null,
-          current_period_end: null,
-        },
-        { onConflict: "user_id" },
-      );
-      assertSupabaseSuccess(profileError, "Unable to cancel billing profile");
-      const { error: creditError } = await supabase.rpc("grant_monthly_credits", {
-        p_user_id: userId,
-        p_amount: PLANS.free.monthlyCredits,
-        p_reason: "subscription_canceled_free_reset",
-        p_stripe_event_id: event.id,
-      });
-      assertSupabaseSuccess(creditError, "Unable to reset free credits");
+    if (event.type === "customer.subscription.deleted") {
+      const subscription = event.data.object as Stripe.Subscription;
+      const { data: profile } = await supabase
+        .from("user_billing_profiles")
+        .select("user_id")
+        .eq("stripe_subscription_id", subscription.id)
+        .maybeSingle();
+      const userId = (profile?.user_id || subscription.metadata.userId) as string | undefined;
+      if (userId) {
+        const { error: profileError } = await supabase.from("user_billing_profiles").upsert(
+          {
+            user_id: userId,
+            stripe_customer_id: String(subscription.customer),
+            stripe_subscription_id: null,
+            plan: "free",
+            subscription_status: "canceled",
+            current_period_start: null,
+            current_period_end: null,
+          },
+          { onConflict: "user_id" },
+        );
+        assertSupabaseSuccess(profileError, "Unable to cancel billing profile");
+        const { error: creditError } = await supabase.rpc("grant_monthly_credits", {
+          p_user_id: userId,
+          p_amount: PLANS.free.monthlyCredits,
+          p_reason: "subscription_canceled_free_reset",
+          p_stripe_event_id: event.id,
+        });
+        assertSupabaseSuccess(creditError, "Unable to reset free credits");
+      }
     }
-  }
 
-  return NextResponse.json({ received: true });
+    if (event.type === "charge.refunded") {
+      await handleRefund(event.data.object as Stripe.Charge, event.id);
+    }
+
+    await markWebhookEvent(event, "completed");
+    return NextResponse.json({ received: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Stripe webhook processing failed.";
+    await markWebhookEvent(event, "failed", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

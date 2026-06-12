@@ -52,6 +52,7 @@ export const ja = {
   "nav.improvements": "改善提案",
   "nav.prs": "PRレビュー",
   "nav.settings": "設定",
+  "nav.codexTasks": "Codexタスク",
 
   "common.language": "言語",
   "common.english": "EN",

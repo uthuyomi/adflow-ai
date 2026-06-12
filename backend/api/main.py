@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Literal
 
@@ -35,10 +36,12 @@ from backend.services.analytics.storage_service import (
     SupabaseCollectionStorage,
 )
 from backend.services.billing.credits import CREDIT_COSTS, CreditService, InsufficientCreditsError
+from backend.services.codex.codex_task_service import CodexTaskService
 from backend.services.github.github_pr_client import GitHubPRClient
-from backend.services.github.in_memory_pr_client import InMemoryPullRequestClient
 from backend.services.github.pr_service import PRService
+from backend.services.github.github_integration_service import GitHubIntegrationService
 from backend.services.history.change_history_service import ChangeHistoryService
+from backend.services.improvements.improvement_workflow_service import ImprovementWorkflowService
 from backend.services.lp.lp_collector import LPCollection, LPCollector
 from backend.services.demand.demand_intelligence_service import DemandIntelligenceService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
@@ -52,6 +55,34 @@ from backend.services.x_ads.x_ads_service import XAdsService
 
 app = FastAPI(title="AdFlow AI")
 _AUTHENTICATED_USER_EMAILS: dict[str, str] = {}
+_GITHUB_SYNC_TASK: asyncio.Task[None] | None = None
+
+
+async def _github_sync_loop() -> None:
+    while True:
+        settings = load_settings()
+        await asyncio.sleep(settings.github_sync_interval_seconds)
+        try:
+            await asyncio.to_thread(_build_github_service(settings).sync_all_tracked)
+        except Exception:
+            # Individual sync failures are persisted by GitHubIntegrationService.
+            continue
+
+
+@app.on_event("startup")
+async def start_github_sync_loop() -> None:
+    global _GITHUB_SYNC_TASK
+    settings = load_settings()
+    if settings.github_sync_enabled and settings.storage_provider == "supabase" and settings.github_token_encryption_key:
+        _GITHUB_SYNC_TASK = asyncio.create_task(_github_sync_loop())
+
+
+@app.on_event("shutdown")
+async def stop_github_sync_loop() -> None:
+    global _GITHUB_SYNC_TASK
+    if _GITHUB_SYNC_TASK:
+        _GITHUB_SYNC_TASK.cancel()
+        _GITHUB_SYNC_TASK = None
 
 
 def _cors_origins() -> list[str]:
@@ -100,6 +131,62 @@ class AdFlowRunRequest(BaseModel):
 class DecisionRequest(BaseModel):
     decision_status: str
     decision_reason: str | None = None
+
+
+class ImprovementTransitionRequest(BaseModel):
+    new_status: Literal["GENERATED", "APPROVED", "REJECTED", "APPLY_READY", "APPLIED", "FAILED"]
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class GitHubTokenConnectionRequest(BaseModel):
+    token: str = Field(min_length=20)
+
+
+class GitHubOAuthStartRequest(BaseModel):
+    return_path: str = "/settings"
+
+
+class GitHubRepositorySelectionRequest(BaseModel):
+    connection_id: str
+    repository: str = Field(pattern=r"^[^/]+/[^/]+$")
+
+
+class GitHubPullRequestCreateRequest(BaseModel):
+    improvement_id: str
+    repository_selection_id: str
+
+
+class CodexTaskCreateRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+
+class CodexManualExecutionRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+    summary: str = Field(min_length=1, max_length=4000)
+    stdout: str | None = None
+    stderr: str | None = None
+    files_changed: list[dict[str, Any]] = Field(default_factory=list)
+    diff_summary: str | None = None
+    succeeded: bool = True
+    error_code: str | None = None
+
+
+class CodexRealExecutionRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+
+class CodexCancelRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class CodexCreatePrRequest(BaseModel):
+    execution_id: str
+    repository_selection_id: str
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+
+class CodexCreateOutcomeRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
 
 
 class PairAnalysisRequest(BaseModel):
@@ -972,6 +1059,151 @@ def list_ai_agents(user_id: str = Depends(_authenticated_user_id)) -> list[dict[
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/improvements")
+def list_improvements(
+    status: str | None = None,
+    search: str | None = None,
+    sort: Literal["newest", "oldest", "confidence", "score"] = "newest",
+    limit: int = 200,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_improvement_service(load_settings()).list_improvements(
+            user_id=user_id, status=status, search=search, sort=sort, limit=limit
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/improvements/stats")
+def get_improvement_stats(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_improvement_service(load_settings()).stats(user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/improvements/{improvement_id}")
+def get_improvement(improvement_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_improvement_service(load_settings()).get_improvement(user_id=user_id, improvement_id=improvement_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/improvements/{improvement_id}/history")
+def get_improvement_history(
+    improvement_id: str, user_id: str = Depends(_authenticated_user_id)
+) -> list[dict[str, Any]]:
+    try:
+        return _build_improvement_service(load_settings()).list_history(user_id=user_id, improvement_id=improvement_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/improvements/{improvement_id}/transition")
+def transition_improvement(
+    improvement_id: str,
+    request: ImprovementTransitionRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_improvement_service(load_settings()).transition(
+            user_id=user_id, improvement_id=improvement_id, new_status=request.new_status, reason=request.reason
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/github/connections")
+def list_github_connections(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_github_service(load_settings()).list_connections(user_id=user_id)
+
+
+@app.get("/integrations/github/configuration")
+def get_github_configuration(user_id: str = Depends(_authenticated_user_id)) -> dict[str, bool]:
+    return _build_github_service(load_settings()).configuration()
+
+
+@app.post("/integrations/github/oauth/start")
+def start_github_oauth(request: GitHubOAuthStartRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, str]:
+    return _build_github_service(load_settings()).start_oauth(user_id=user_id, return_path=request.return_path)
+
+
+@app.get("/integrations/github/oauth/callback")
+def complete_github_oauth(code: str | None = None, state: str | None = None) -> RedirectResponse:
+    return RedirectResponse(_build_github_service(load_settings()).complete_oauth(code=code, state=state))
+
+
+@app.post("/integrations/github/connections")
+def connect_github(request: GitHubTokenConnectionRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_github_service(load_settings()).connect_token(user_id=user_id, token=request.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/github/connections/{connection_id}/revoke")
+def revoke_github(connection_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_github_service(load_settings()).revoke(user_id=user_id, connection_id=connection_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/github/connections/{connection_id}/repositories")
+def list_github_repositories(connection_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_github_service(load_settings()).list_repositories(user_id=user_id, connection_id=connection_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/github/connections/{connection_id}/branches")
+def list_github_branches(connection_id: str, repository: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_github_service(load_settings()).list_branches(user_id=user_id, connection_id=connection_id, repository=repository)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/github/repositories/select")
+def select_github_repository(request: GitHubRepositorySelectionRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_github_service(load_settings()).select_repository(user_id=user_id, connection_id=request.connection_id, repository=request.repository)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/integrations/github/pull-requests")
+def list_github_pull_requests(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_github_service(load_settings()).list_pull_requests(user_id=user_id)
+
+
+@app.post("/integrations/github/pull-requests")
+def create_github_pull_request(request: GitHubPullRequestCreateRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_github_service(load_settings()).create_pull_request(user_id=user_id, improvement_id=request.improvement_id, repository_selection_id=request.repository_selection_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/github/pull-requests/sync-all")
+def sync_all_github_pull_requests(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    try:
+        return _build_github_service(load_settings()).sync_all(user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/github/pull-requests/{pull_request_id}/sync")
+def sync_github_pull_request(pull_request_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_github_service(load_settings()).sync(user_id=user_id, pull_request_id=pull_request_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/orchestration/runs")
 def list_orchestration_runs(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
     try:
@@ -1024,20 +1256,81 @@ def decide_ai_agent_result(
 @app.post("/orchestration/results/{result_id}/codex-task")
 def generate_codex_task(
     result_id: str,
+    request: CodexTaskCreateRequest,
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
-        _require_feature_credits(user_id=user_id, feature_key="codex_task")
-        result = _build_orchestrator(load_settings()).build_codex_task_prompt(
-            user_id=user_id,
-            result_id=result_id,
-        )
-        _consume_feature_credits(
-            user_id=user_id,
-            feature_key="codex_task",
-            metadata={"endpoint": "/orchestration/results/{result_id}/codex-task", "result_id": result_id},
-        )
-        return result
+        return _build_codex_service(load_settings()).create_task(user_id=user_id, improvement_id=result_id, idempotency_key=request.idempotency_key)
+    except InsufficientCreditsError as exc:
+        raise HTTPException(status_code=402, detail={"error": "INSUFFICIENT_CREDITS", "requiredCredits": exc.required_credits, "currentCredits": exc.current_credits}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/codex-tasks/configuration")
+def get_codex_configuration(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_codex_service(load_settings()).configuration()
+
+
+@app.get("/codex-tasks")
+def list_codex_tasks(
+    project_id: str | None = None,
+    improvement_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    sort: Literal["asc", "desc"] = "desc",
+    page: int = 1,
+    page_size: int = 25,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        return _build_codex_service(load_settings()).list_tasks(user_id=user_id, project_id=project_id, improvement_id=improvement_id, status=status, search=search, sort=sort, page=page, page_size=min(max(page_size, 1), 100))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/codex-tasks/{task_id}")
+def get_codex_task(task_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_codex_service(load_settings()).detail(user_id=user_id, task_id=task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/codex-tasks/{task_id}/execute/manual")
+def execute_codex_task_manual(task_id: str, request: CodexManualExecutionRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_codex_service(load_settings()).execute_manual(user_id=user_id, task_id=task_id, **request.model_dump())
+    except InsufficientCreditsError as exc:
+        raise HTTPException(status_code=402, detail={"error": "INSUFFICIENT_CREDITS", "requiredCredits": exc.required_credits, "currentCredits": exc.current_credits}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/codex-tasks/{task_id}/execute/real")
+def execute_codex_task_real(task_id: str, request: CodexRealExecutionRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_codex_service(load_settings()).execute_real(user_id=user_id, task_id=task_id, idempotency_key=request.idempotency_key)
+    except InsufficientCreditsError as exc:
+        raise HTTPException(status_code=402, detail={"error": "INSUFFICIENT_CREDITS", "requiredCredits": exc.required_credits, "currentCredits": exc.current_credits}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/codex-tasks/{task_id}/cancel")
+def cancel_codex_task(task_id: str, request: CodexCancelRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_codex_service(load_settings()).cancel(user_id=user_id, task_id=task_id, reason=request.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/codex-tasks/{task_id}/pull-request")
+def create_codex_task_pull_request(task_id: str, request: CodexCreatePrRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_codex_service(load_settings()).create_pr(user_id=user_id, task_id=task_id, **request.model_dump())
+    except InsufficientCreditsError as exc:
+        raise HTTPException(status_code=402, detail={"error": "INSUFFICIENT_CREDITS", "requiredCredits": exc.required_credits, "currentCredits": exc.current_credits}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1094,10 +1387,13 @@ def generate_outcome_from_ai_result(
 @app.post("/orchestration/codex-tasks/{task_id}/outcome")
 def generate_outcome_from_codex_task(
     task_id: str,
+    request: CodexCreateOutcomeRequest,
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
-        return _build_outcome_service(load_settings()).create_from_codex_task(user_id=user_id, task_id=task_id)
+        return _build_codex_service(load_settings()).create_outcome(user_id=user_id, task_id=task_id, idempotency_key=request.idempotency_key)
+    except InsufficientCreditsError as exc:
+        raise HTTPException(status_code=402, detail={"error": "INSUFFICIENT_CREDITS", "requiredCredits": exc.required_credits, "currentCredits": exc.current_credits}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1174,6 +1470,18 @@ def _build_ad_ab_test_service(settings: Settings) -> AdABTestService:
 
 def _build_x_ads_service(settings: Settings) -> XAdsService:
     return XAdsService(repository=_repository_for_settings(settings), settings=settings)
+
+
+def _build_improvement_service(settings: Settings) -> ImprovementWorkflowService:
+    return ImprovementWorkflowService(repository=_repository_for_settings(settings))
+
+
+def _build_github_service(settings: Settings) -> GitHubIntegrationService:
+    return GitHubIntegrationService(_repository_for_settings(settings), settings.github_token_encryption_key, oauth_client_id=settings.github_oauth_client_id, oauth_client_secret=settings.github_oauth_client_secret, oauth_callback_url=settings.github_oauth_callback_url, frontend_url=settings.frontend_app_url)
+
+
+def _build_codex_service(settings: Settings) -> CodexTaskService:
+    return CodexTaskService(repository=_repository_for_settings(settings), settings=settings)
 
 
 def _repository_for_settings(settings: Settings) -> SupabaseRepository:
@@ -1301,7 +1609,7 @@ def _build_openai_llm_client(settings: Settings) -> OpenAIJSONClient | None:
     return OpenAIJSONClient(model=model)
 
 
-def _build_pr_client(settings: Settings) -> InMemoryPullRequestClient | GitHubPRClient:
+def _build_pr_client(settings: Settings) -> GitHubPRClient:
     if settings.github_provider == "github":
         if settings.github_repository is None or settings.github_token is None:
             raise ValueError("GITHUB_REPOSITORY and GITHUB_TOKEN are required.")
@@ -1310,7 +1618,7 @@ def _build_pr_client(settings: Settings) -> InMemoryPullRequestClient | GitHubPR
             token=settings.github_token,
         )
 
-    return InMemoryPullRequestClient()
+    raise ValueError("Legacy workflow PR creation requires ADFLOW_GITHUB_PROVIDER=github. Mock PR creation is disabled.")
 
 
 def _build_storage(

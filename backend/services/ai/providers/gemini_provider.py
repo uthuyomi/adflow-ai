@@ -30,7 +30,7 @@ class GeminiProvider:
         if not self.is_configured():
             return self.fallback.generate_structured(
                 system_prompt=system_prompt,
-                user_payload={**user_payload, "provider": self.provider_key},
+                user_payload={**user_payload, "provider": self.provider_key, "failure_reason": "Gemini is not configured."},
                 schema=schema,
             )
         try:
@@ -58,10 +58,10 @@ class GeminiProvider:
             )
             response.raise_for_status()
             text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-            return json.loads(text)
-        except Exception:
+            return {**json.loads(text), "provider_type": "REAL", "failure_reason": None, "source_provider": self.provider_key}
+        except Exception as exc:
             return self.fallback.generate_structured(
                 system_prompt=system_prompt,
-                user_payload={**user_payload, "provider": self.provider_key},
+                user_payload={**user_payload, "provider": self.provider_key, "failure_reason": f"Gemini request failed: {type(exc).__name__}"},
                 schema=schema,
             )

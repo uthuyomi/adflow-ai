@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "next typegen && tsc --noEmit",
+    "test:phase1": "node --experimental-strip-types --test lib/billing/stripe-policy.test.ts lib/contact/validation.test.ts",
     "i18n:audit": "node scripts/i18n-audit.mjs"
   },
   "dependencies": {

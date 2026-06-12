@@ -30,7 +30,7 @@ class GrokProvider:
         if not self.is_configured():
             return self.fallback.generate_structured(
                 system_prompt=system_prompt,
-                user_payload={**user_payload, "provider": self.provider_key},
+                user_payload={**user_payload, "provider": self.provider_key, "failure_reason": "Grok is not configured."},
                 schema=schema,
             )
         try:
@@ -59,10 +59,10 @@ class GrokProvider:
             )
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
-            return json.loads(content)
-        except Exception:
+            return {**json.loads(content), "provider_type": "REAL", "failure_reason": None, "source_provider": self.provider_key}
+        except Exception as exc:
             return self.fallback.generate_structured(
                 system_prompt=system_prompt,
-                user_payload={**user_payload, "provider": self.provider_key},
+                user_payload={**user_payload, "provider": self.provider_key, "failure_reason": f"Grok request failed: {type(exc).__name__}"},
                 schema=schema,
             )

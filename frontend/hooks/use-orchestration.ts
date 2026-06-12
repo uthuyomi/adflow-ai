@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getApiBaseUrl } from "@/lib/api/client";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { AIAgent, AIAgentResult, AIAgentScorecard, AIOrchestrationRun, CodexTaskPrompt } from "@/lib/types/adflow";
+import type { AIAgent, AIAgentResult, AIAgentScorecard, AIOrchestrationRun } from "@/lib/types/adflow";
+import { createCodexTask } from "@/lib/api/codex";
 
 async function requestWithAuth<T>(path: string, init?: RequestInit): Promise<T> {
   const supabase = getSupabaseBrowserClient();
@@ -72,6 +73,8 @@ export function useAIAgentDecision() {
       queryClient.invalidateQueries({ queryKey: ["ai-agent-results"] });
       queryClient.invalidateQueries({ queryKey: ["ai-agent-scorecards"] });
       queryClient.invalidateQueries({ queryKey: ["analysis-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["improvements"] });
+      queryClient.invalidateQueries({ queryKey: ["improvement-stats"] });
     },
   });
 }
@@ -79,8 +82,6 @@ export function useAIAgentDecision() {
 export function useGenerateCodexTask() {
   return useMutation({
     mutationFn: (resultId: string) =>
-      requestWithAuth<CodexTaskPrompt>(`/orchestration/results/${resultId}/codex-task`, {
-        method: "POST",
-      }),
+      createCodexTask(resultId),
   });
 }

@@ -359,6 +359,7 @@ class DemandIntelligenceService:
                         "source_name": signal.source_name,
                         "external_id": getattr(signal, "external_id", None),
                         "connector_key": getattr(signal, "connector_key", "synthetic"),
+                        "data_source_type": _data_source_type(getattr(signal, "connector_key", "synthetic")),
                         "url": signal.url,
                         "title": signal.title,
                         "body": signal.body,
@@ -390,6 +391,7 @@ class DemandIntelligenceService:
                         "signal_index": index,
                         "embedding": vector,
                         "model_name": self.settings.demand_embedding_model,
+                        "data_source_type": "SYNTHETIC",
                     },
                 )
             inserted_clusters: list[dict[str, Any]] = []
@@ -398,7 +400,7 @@ class DemandIntelligenceService:
                 cluster_payload.pop("id", None)
                 inserted_cluster = self.repository.insert(
                     "demand_intelligence_clusters",
-                    {"run_id": run["id"], **cluster_payload},
+                    {"run_id": run["id"], "data_source_type": "SYNTHETIC", **cluster_payload},
                 )
                 cluster_dict = cluster.model_dump(mode="json")
                 cluster_dict["db_id"] = inserted_cluster.get("id")
@@ -524,6 +526,7 @@ class DemandIntelligenceService:
                         "ad_lp_pair_id": ad_lp_pair_id,
                         "run_id": run["id"],
                         "cluster_id": snapshot.get("cluster_id") if _looks_uuid(snapshot.get("cluster_id")) else None,
+                        "data_source_type": "SYNTHETIC",
                         **{key: value for key, value in snapshot.items() if key != "cluster_id"},
                     }
                     for snapshot in snapshots
@@ -559,6 +562,7 @@ class DemandIntelligenceService:
                         "query": signal["query"],
                         "keyword": signal["keyword"],
                         "source_type": signal["source_type"],
+                        "data_source_type": "SYNTHETIC",
                         "search_volume_estimate": signal["search_volume_estimate"],
                         "competition_level": signal["competition_level"],
                         "cpc_estimate": signal["cpc_estimate"],
@@ -588,6 +592,7 @@ class DemandIntelligenceService:
                         "ad_lp_pair_id": ad_lp_pair_id,
                         "cluster_id": estimate.get("cluster_id") if _looks_uuid(estimate.get("cluster_id")) else None,
                         "segment_name": estimate["segment_name"],
+                        "data_source_type": "SYNTHETIC",
                         "persona": estimate.get("persona"),
                         "estimated_audience_size_min": estimate["estimated_audience_size_min"],
                         "estimated_audience_size_max": estimate["estimated_audience_size_max"],
@@ -611,6 +616,7 @@ class DemandIntelligenceService:
                 if ad_lp_pair_id
                 else []
             )
+            recent_outcomes = self._learning_eligible_outcomes(user_id=user_id, outcomes=recent_outcomes)
             learning_links, outcome_learning_summary = self.outcome_learning.build(
                 clusters=inserted_clusters,
                 outcomes=recent_outcomes,
@@ -771,6 +777,7 @@ class DemandIntelligenceService:
             pair_id=run["ad_lp_pair_id"],
             limit=30,
         )
+        outcomes = self._learning_eligible_outcomes(user_id=user_id, outcomes=outcomes)
         links, summary = self.outcome_learning.build(
             clusters=clusters,
             outcomes=outcomes,
@@ -1176,6 +1183,18 @@ class DemandIntelligenceService:
         raw = [byte / 255 for byte in digest[:16]]
         norm = sqrt(sum(value * value for value in raw)) or 1
         return [round(value / norm, 6) for value in raw]
+
+    def _learning_eligible_outcomes(self, *, user_id: str, outcomes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        eligible: list[dict[str, Any]] = []
+        for outcome in outcomes:
+            result_id = outcome.get("source_ai_result_id")
+            if not result_id:
+                eligible.append(outcome)
+                continue
+            result = self.repository.get_one("ai_agent_results", user_id=user_id, filters={"id": result_id})
+            if result.get("provider_type") == "REAL":
+                eligible.append(outcome)
+        return eligible
 
     def _cluster(
         self,
@@ -1664,6 +1683,10 @@ def _looks_uuid(value: Any) -> bool:
         return False
     parts = value.split("-")
     return len(parts) == 5 and all(parts)
+
+
+def _data_source_type(connector_key: Any) -> str:
+    return "REAL" if str(connector_key) in {"google_custom_search", "firecrawl_search", "firecrawl", "x", "web_page"} else "SYNTHETIC"
 
 
 def _unique_urls(urls: list[str]) -> list[str]:

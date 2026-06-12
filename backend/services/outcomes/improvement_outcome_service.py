@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.services.supabase.supabase_repository import SupabaseRepository
 
-OUTCOME_STATUSES = {"pending", "implemented", "measured", "positive", "neutral", "negative", "inconclusive"}
+OUTCOME_STATUSES = {"pending", "PENDING_MEASUREMENT", "implemented", "measured", "positive", "neutral", "negative", "inconclusive"}
 METRIC_KEYS = ("impressions", "clicks", "conversions", "spend", "ctr", "cpc", "cvr", "bounce_rate", "session_duration", "scroll_depth")
 
 
@@ -52,8 +52,10 @@ class ImprovementOutcomeService:
 
     def create_from_ai_result(self, *, user_id: str, result_id: str) -> dict[str, Any]:
         result = self.repository.get_one("ai_agent_results", user_id=user_id, filters={"id": result_id})
-        if result.get("decision_status") != "apply_ready":
-            raise ValueError("AI result must be apply_ready before creating an outcome draft.")
+        if result.get("decision_status") != "APPLY_READY":
+            raise ValueError("AI result must be APPLY_READY before creating an outcome draft.")
+        if result.get("provider_type") != "REAL":
+            raise ValueError("Mock AI results cannot create learning outcomes.")
         output = result.get("output") or {}
         title = str(output.get("summary") or result.get("task") or "Improvement outcome draft")[:100]
         return self.create_outcome(
@@ -69,17 +71,35 @@ class ImprovementOutcomeService:
         task = self.repository.get_one("codex_task_prompts", user_id=user_id, filters={"id": task_id})
         source_result_id = task.get("source_ai_result_id")
         result = self.repository.get_one("ai_agent_results", user_id=user_id, filters={"id": source_result_id}) if source_result_id else None
+        if result and result.get("provider_type") != "REAL":
+            raise ValueError("Codex tasks sourced from mock AI results cannot create learning outcomes.")
         pair_id = result.get("ad_lp_pair_id") if result else None
         if not pair_id:
             raise ValueError("Codex task is not linked to an ad LP pair.")
-        return self.create_outcome(
+        executions = self.repository.get_many("codex_task_executions", user_id=user_id, filters={"task_id": task_id, "status": "SUCCEEDED"}, order="created_at.desc", limit=1)
+        prs = self.repository.get_many("github_pull_requests", user_id=user_id, filters={"codex_task_id": task_id}, order="created_at.desc", limit=1)
+        execution = executions[0] if executions else {}
+        pr = prs[0] if prs else {}
+        outcome = self.create_outcome(
             user_id=user_id,
             project_id=task.get("project_id"),
             ad_lp_pair_id=pair_id,
             source_ai_result_id=source_result_id,
             source_codex_task_id=task_id,
             title=str(task.get("title") or "Codex task outcome")[:100],
-            description="Draft outcome created from Codex task prompt.",
+            description=f"Codex implementation result: {execution.get('summary') or 'No execution summary.'}",
+        )
+        predicted = result.get("predicted_effect") if result else {}
+        return self.repository.update_improvement_outcome(
+            user_id=user_id,
+            outcome_id=outcome["id"],
+            payload={
+                "outcome_status": "PENDING_MEASUREMENT",
+                "expected_metrics": predicted or {},
+                "measurement_scheduled_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+                "related_pr_url": pr.get("pr_url"),
+                "implementation_summary": execution.get("summary"),
+            },
         )
 
     def get_outcomes_for_pair(self, *, user_id: str, pair_id: str) -> list[dict[str, Any]]:
@@ -110,7 +130,11 @@ class ImprovementOutcomeService:
         return self.repository.update_improvement_outcome(user_id=user_id, outcome_id=outcome_id, payload=update_payload)
 
     def get_outcome_context_for_analysis(self, *, user_id: str, pair_id: str) -> dict[str, Any]:
-        outcomes = self.repository.get_improvement_outcomes_for_analysis_context(user_id=user_id, pair_id=pair_id)
+        outcomes = [
+            item
+            for item in self.repository.get_improvement_outcomes_for_analysis_context(user_id=user_id, pair_id=pair_id)
+            if self._is_learning_eligible(user_id=user_id, outcome=item)
+        ]
         successful = [item for item in outcomes if item.get("outcome_status") == "positive"]
         failed = [item for item in outcomes if item.get("outcome_status") == "negative"]
         inconclusive = [item for item in outcomes if item.get("outcome_status") in {"neutral", "inconclusive"}]
@@ -120,6 +144,13 @@ class ImprovementOutcomeService:
             "failed_patterns": [self._pattern(item) for item in failed],
             "inconclusive_patterns": [self._pattern(item) for item in inconclusive],
         }
+
+    def _is_learning_eligible(self, *, user_id: str, outcome: dict[str, Any]) -> bool:
+        result_id = outcome.get("source_ai_result_id")
+        if not result_id:
+            return True
+        result = self.repository.get_one("ai_agent_results", user_id=user_id, filters={"id": result_id})
+        return result.get("provider_type") == "REAL"
 
     @staticmethod
     def calculate_metric_delta(before_metrics: dict[str, Any], after_metrics: dict[str, Any]) -> dict[str, Any]:

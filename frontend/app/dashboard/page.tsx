@@ -15,6 +15,7 @@ import { useLandingPages } from "@/hooks/use-landing-pages";
 import { useProjects } from "@/hooks/use-projects";
 import { useTwitterAds } from "@/hooks/use-twitter-ads";
 import { useDemandIntelligenceDashboard, useOutcomesDashboard } from "@/hooks/useAdflowData";
+import { useImprovementStats } from "@/hooks/useImprovement";
 
 export default function DashboardPage() {
   const { t } = useI18n();
@@ -24,8 +25,9 @@ export default function DashboardPage() {
   const pairs = useAdLpPairs();
   const demand = useDemandIntelligenceDashboard();
   const outcomes = useOutcomesDashboard();
-  const isLoading = projects.isLoading || ads.isLoading || landingPages.isLoading || pairs.isLoading || demand.isLoading || outcomes.isLoading;
-  const isError = projects.isError || ads.isError || landingPages.isError || pairs.isError || demand.isError || outcomes.isError;
+  const improvementStats = useImprovementStats();
+  const isLoading = projects.isLoading || ads.isLoading || landingPages.isLoading || pairs.isLoading || demand.isLoading || outcomes.isLoading || improvementStats.isLoading;
+  const isError = projects.isError || ads.isError || landingPages.isError || pairs.isError || demand.isError || outcomes.isError || improvementStats.isError;
 
   if (isLoading) return <PageSkeleton />;
   if (isError) return <ErrorState />;
@@ -70,6 +72,17 @@ export default function DashboardPage() {
       <Card>
         <CardHeader><CardTitle>{t("dashboard.nextAction")}</CardTitle></CardHeader>
         <CardContent><NextAction counts={counts} /></CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Improvement workflow</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <ResultRow label="Total proposals" value={improvementStats.data?.total ?? 0} />
+          <ResultRow label="Approval rate %" value={improvementStats.data?.approval_rate ?? 0} />
+          <ResultRow label="Rejection rate %" value={improvementStats.data?.rejection_rate ?? 0} />
+          <ResultRow label="Apply Ready" value={improvementStats.data?.counts.APPLY_READY ?? 0} />
+          <ResultRow label="Applied" value={improvementStats.data?.counts.APPLIED ?? 0} />
+          <ResultRow label="Failed" value={improvementStats.data?.counts.FAILED ?? 0} />
+        </CardContent>
       </Card>
     </div>
   );

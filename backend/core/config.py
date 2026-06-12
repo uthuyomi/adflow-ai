@@ -16,6 +16,15 @@ class Settings(BaseModel):
     openai_deep_model: str | None = None
     github_repository: str | None = None
     github_token: str | None = None
+    github_token_encryption_key: str | None = None
+    github_oauth_client_id: str | None = None
+    github_oauth_client_secret: str | None = None
+    github_oauth_callback_url: str = "http://127.0.0.1:8000/integrations/github/oauth/callback"
+    github_sync_enabled: bool = True
+    github_sync_interval_seconds: int = Field(default=300, ge=30)
+    codex_executable: str = "codex"
+    codex_workspace: str | None = None
+    codex_execution_timeout_seconds: int = Field(default=1800, ge=30)
     supabase_url: str | None = None
     supabase_key: str | None = None
     supabase_table: str = "adflow_runs"
@@ -90,6 +99,15 @@ def load_settings() -> Settings:
         openai_deep_model=os.getenv("OPENAI_DEEP_MODEL"),
         github_repository=os.getenv("GITHUB_REPOSITORY"),
         github_token=os.getenv("GITHUB_TOKEN"),
+        github_token_encryption_key=os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY") or os.getenv("X_ADS_TOKEN_ENCRYPTION_KEY"),
+        github_oauth_client_id=os.getenv("GITHUB_OAUTH_CLIENT_ID"),
+        github_oauth_client_secret=os.getenv("GITHUB_OAUTH_CLIENT_SECRET"),
+        github_oauth_callback_url=os.getenv("GITHUB_OAUTH_CALLBACK_URL", "http://127.0.0.1:8000/integrations/github/oauth/callback"),
+        github_sync_enabled=_env_bool("GITHUB_SYNC_ENABLED", True),
+        github_sync_interval_seconds=int(os.getenv("GITHUB_SYNC_INTERVAL_SECONDS", "300")),
+        codex_executable=os.getenv("CODEX_EXECUTABLE", "codex"),
+        codex_workspace=os.getenv("CODEX_WORKSPACE"),
+        codex_execution_timeout_seconds=int(os.getenv("CODEX_EXECUTION_TIMEOUT_SECONDS", "1800")),
         supabase_url=os.getenv("SUPABASE_URL"),
         supabase_key=(
             os.getenv("SUPABASE_SERVICE_ROLE_KEY")

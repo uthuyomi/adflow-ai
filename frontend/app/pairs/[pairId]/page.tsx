@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { BarChart3, Play, Search, Settings, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
@@ -30,6 +30,7 @@ import type { AIAgentResult, AIHistoryBasedRecommendation, DemandIntelligenceRun
 export default function PairDetailPage() {
   const { t } = useI18n();
   const params = useParams<{ pairId: string }>();
+  const router = useRouter();
   const pair = useAdLpPair(params.pairId);
   const runs = useAnalysisRuns(params.pairId);
   const history = usePairChangeHistory(pair.data);
@@ -124,8 +125,14 @@ export default function PairDetailPage() {
         <Card className="p-4">
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
             <div className="font-medium">Active analysis route</div>
-            <Badge variant="outline">{insights.ai_mode === "openai_only" ? "OpenAI API only" : "AI Review Center router"}</Badge>
+            <div className="flex gap-2">
+              <Badge variant={latest?.provider_type === "REAL" ? "secondary" : "warning"}>
+                {latest?.provider_type === "REAL" ? "実AI結果" : "モック結果"}
+              </Badge>
+              <Badge variant="outline">{insights.ai_mode === "openai_only" ? "OpenAI API only" : "AI Review Center router"}</Badge>
+            </div>
           </div>
+          {latest?.failure_reason ? <p className="mt-2 text-xs text-warning">{latest.failure_reason}</p> : null}
         </Card>
       ) : null}
 
@@ -226,8 +233,9 @@ export default function PairDetailPage() {
             }}
             onCodexTask={async (resultId) => {
               try {
-                await codexTask.mutateAsync(resultId);
+                const task = await codexTask.mutateAsync(resultId);
                 toast.success("Codex task prompt generated.");
+                router.push(`/codex-tasks/${task.id}`);
               } catch (error) {
                 toast.error(error instanceof Error ? error.message : "Codex task generation failed.");
               }
@@ -338,6 +346,9 @@ export default function PairDetailPage() {
                       <div className="mt-1 text-sm text-muted-foreground">
                         {result.provider} / {result.role}
                       </div>
+                      <Badge className="mt-2" variant={result.provider_type === "REAL" ? "secondary" : "warning"}>
+                        {result.provider_type === "REAL" ? "実AI結果" : "モック結果"}
+                      </Badge>
                     </div>
                     <Badge variant={result.output.risk_level === "high" ? "warning" : "secondary"}>
                       {result.output.risk_level ?? "unknown"}
@@ -581,8 +592,11 @@ function AIProposalComparison({
               <div>
                 <div className="font-semibold">{result.agent_key}</div>
                 <div className="mt-1 text-sm text-muted-foreground">{result.provider} / {result.role}</div>
+                <Badge className="mt-2" variant={result.provider_type === "REAL" ? "secondary" : "warning"}>
+                  {result.provider_type === "REAL" ? "実AI結果" : "モック結果"}
+                </Badge>
               </div>
-              <Badge variant={result.decision_status === "apply_ready" ? "warning" : "secondary"}>{result.decision_status}</Badge>
+              <Badge variant={result.decision_status === "APPLY_READY" ? "warning" : "secondary"}>{result.decision_status}</Badge>
             </div>
             <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
               <div>
@@ -599,6 +613,7 @@ function AIProposalComparison({
               </div>
             </div>
             <p className="mt-4 text-sm text-muted-foreground">{output.summary ?? "No summary"}</p>
+            {result.failure_reason ? <p className="mt-2 text-xs text-warning">{result.failure_reason}</p> : null}
             <div className="mt-3 space-y-2">
               {(output.recommendations ?? []).slice(0, 3).map((item) => (
                 <div key={item} className="rounded-md border border-border p-3 text-sm">
@@ -612,18 +627,18 @@ function AIProposalComparison({
               <div>Generated: {new Date(result.created_at).toLocaleString()}</div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              {(["accepted", "rejected", "needs_review", "apply_ready"] as const).map((status) => (
+              {(["APPROVED", "REJECTED", "APPLY_READY"] as const).map((status) => (
                 <Button key={status} size="sm" variant="outline" disabled={isDeciding} onClick={() => onDecision(result.id, status)}>
                   {status}
                 </Button>
               ))}
-              <Button size="sm" disabled={isGeneratingTask || result.decision_status !== "apply_ready"} onClick={() => onCodexTask(result.id)}>
+              <Button size="sm" disabled={isGeneratingTask || result.decision_status !== "APPLY_READY"} onClick={() => onCodexTask(result.id)}>
                 Generate Codex Task
               </Button>
-              <Button size="sm" variant="outline" disabled={isCreatingOutcome || result.decision_status !== "apply_ready"} onClick={() => onOutcomeDraft(result.id)}>
+              <Button size="sm" variant="outline" disabled={isCreatingOutcome || result.decision_status !== "APPLY_READY"} onClick={() => onOutcomeDraft(result.id)}>
                 Create Outcome Draft
               </Button>
-              <Button size="sm" disabled={result.decision_status !== "apply_ready"} onClick={() => onXAdsDraft(result)}>
+              <Button size="sm" disabled={result.decision_status !== "APPLY_READY"} onClick={() => onXAdsDraft(result)}>
                 Create X Ads Draft
               </Button>
             </div>
@@ -829,7 +844,12 @@ function DemandIntelligencePanel({
                         <div className="rounded-md bg-muted p-3" key={`${item.label}-${signal.id}`}>
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <span>{signal.title}</span>
-                            <Badge variant="outline">{signal.source_type}</Badge>
+                            <div className="flex gap-2">
+                              <Badge variant={signal.data_source_type === "REAL" ? "secondary" : "warning"}>
+                                {signal.data_source_type === "REAL" ? "実測値" : "参考推定値"}
+                              </Badge>
+                              <Badge variant="outline">{signal.source_type}</Badge>
+                            </div>
                           </div>
                           <p className="mt-2 text-muted-foreground">{String(signal.metadata?.normalized_text ?? signal.body)}</p>
                         </div>
@@ -980,6 +1000,7 @@ function SearchDemandPanel({ searchSignals, summary }: { searchSignals: DemandSe
       <CardContent className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <span className="text-muted-foreground">Indicative score</span>
+          <Badge variant="warning">参考推定値</Badge>
           <Badge variant="outline">{String(summary?.search_demand_score ?? "-")}</Badge>
         </div>
         {(topKeywords.length ? topKeywords : searchSignals).slice(0, 5).map((rawItem) => {
@@ -1014,6 +1035,7 @@ function MarketSizePanel({ estimates, summary }: { estimates: DemandMarketSizeEs
       <CardContent className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <span className="text-muted-foreground">Estimate score</span>
+          <Badge variant="warning">参考推定値</Badge>
           <Badge variant="outline">{String(summary?.market_size_score ?? "-")}</Badge>
         </div>
         {(segments.length ? segments : estimates).slice(0, 5).map((rawItem) => {
@@ -1092,7 +1114,10 @@ function ClusterSection({ title, clusters }: { title: string; clusters: DemandIn
           <div className="rounded-md border border-border p-3 text-sm" key={cluster.id}>
             <div className="flex items-center justify-between gap-2">
               <div className="font-medium">{cluster.name}</div>
-              <Badge variant="outline">{cluster.demand_signal_score}</Badge>
+              <div className="flex gap-2">
+                <Badge variant="warning">参考推定値</Badge>
+                <Badge variant="outline">{cluster.demand_signal_score}</Badge>
+              </div>
             </div>
             <div className="mt-2 text-muted-foreground">{cluster.category} / {cluster.trend} / {cluster.count} signals</div>
             <div className="mt-2 text-xs text-muted-foreground">{cluster.root_causes.slice(0, 3).join(", ")}</div>

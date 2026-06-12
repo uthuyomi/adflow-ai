@@ -172,9 +172,15 @@ export default function OrchestrationPage() {
                 <div key={result.id} className="rounded-md border border-border p-3 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <div className="font-medium">{result.agent_key}</div>
-                    <Badge variant="outline">{result.decision_status}</Badge>
+                    <div className="flex gap-2">
+                      <Badge variant={result.provider_type === "REAL" ? "secondary" : "warning"}>
+                        {result.provider_type === "REAL" ? "実AI結果" : "モック結果"}
+                      </Badge>
+                      <Badge variant="outline">{result.decision_status}</Badge>
+                    </div>
                   </div>
                   <p className="mt-2 text-muted-foreground">{output.summary ?? result.task}</p>
+                  {result.failure_reason ? <p className="mt-2 text-xs text-warning">{result.failure_reason}</p> : null}
                 </div>
               );
             })}

@@ -33,8 +33,8 @@ class XAdsReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(cipher.decrypt(encrypted), "secret-token")
 
     def test_publish_request_requires_apply_ready(self) -> None:
-        self.repository.tables["ai_agent_results"] = [{"id": "result", "user_id": "user", "decision_status": "accepted", "ad_lp_pair_id": "pair", "project_id": "project"}]
-        with self.assertRaisesRegex(ValueError, "apply_ready"):
+        self.repository.tables["ai_agent_results"] = [{"id": "result", "user_id": "user", "decision_status": "APPROVED", "ad_lp_pair_id": "pair", "project_id": "project"}]
+        with self.assertRaisesRegex(ValueError, "APPLY_READY"):
             self.service.create_publish_request(
                 user_id="user",
                 source_ai_result_id="result",
@@ -57,7 +57,7 @@ class XAdsReleaseWorkflowTests(unittest.TestCase):
 
     def test_create_publish_request_reuses_same_idempotency_key(self) -> None:
         self.repository.tables["ai_agent_results"] = [{
-            "id": "result", "user_id": "user", "decision_status": "apply_ready", "ad_lp_pair_id": "pair", "project_id": "project", "output": {"recommendations": ["Approved copy"]},
+            "id": "result", "user_id": "user", "decision_status": "APPLY_READY", "ad_lp_pair_id": "pair", "project_id": "project", "output": {"recommendations": ["Approved copy"]},
         }]
         self.repository.tables["ad_lp_pairs"] = [{"id": "pair", "user_id": "user", "twitter_ad_id": "ad"}]
         self.repository.tables["twitter_ads"] = [{"id": "ad", "user_id": "user", "destination_url": "https://example.com"}]

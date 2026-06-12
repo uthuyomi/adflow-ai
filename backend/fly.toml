@@ -12,6 +12,8 @@ primary_region = "nrt"
   ADFLOW_SUPABASE_TABLE = "adflow_runs"
   DEMAND_SYNTHETIC_FALLBACK = "true"
   DEMAND_REAL_SOURCES_ENABLED = "true"
+  GITHUB_SYNC_ENABLED = "true"
+  GITHUB_SYNC_INTERVAL_SECONDS = "300"
 
 [http_service]
   internal_port = 8080

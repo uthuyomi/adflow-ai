@@ -22,6 +22,7 @@ const labels: Record<string, string> = {
   "/lp": "nav.lpAnalysis",
   "/improvements": "nav.improvements",
   "/prs": "nav.prs",
+  "/codex-tasks": "nav.codexTasks",
   "/settings": "nav.settings",
 };
 

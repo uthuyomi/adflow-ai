@@ -167,7 +167,11 @@ export type Improvement = {
   expectedCtrImpact: number;
   expectedCvrImpact: number;
   riskLevel: "Low" | "Medium" | "High";
-  reviewStatus: "Pending" | "Approved" | "Rejected";
+  reviewStatus: import("@/lib/types/adflow").ImprovementStatus;
+  providerType: "REAL" | "MOCK";
+  sourceProvider: string;
+  decisionReason: string | null;
+  statusUpdatedAt: string;
   diff: z.infer<typeof DiffResultSchema>;
   review: z.infer<typeof ReviewResultSchema>;
   campaignId: string;

@@ -26,6 +26,9 @@ CREDIT_COSTS: dict[str, CreditCost] = {
     "demand_solution_fit": CreditCost(120, "PRODUCT_IDEA_CONVERSION"),
     "outcome_learning_rebuild": CreditCost(20, "LIGHT_DEMAND_SCAN"),
     "codex_task": CreditCost(100, "LP_OUTLINE_GENERATION"),
+    "codex_execution": CreditCost(150, "CODEX_EXECUTION"),
+    "codex_github_pr": CreditCost(40, "CODEX_GITHUB_PR"),
+    "codex_outcome": CreditCost(20, "CODEX_OUTCOME_DRAFT"),
     "x_ads_sync": CreditCost(20, "X_ADS_DETAILED_SYNC"),
     "x_ads_publish": CreditCost(40, "X_ADS_APPROVED_PUBLISH"),
 }
@@ -92,6 +95,38 @@ class CreditService:
             if "INSUFFICIENT_CREDITS" in str(exc):
                 raise InsufficientCreditsError(required_credits=amount, current_credits=total) from exc
             raise
+        return self._normalize_balance(balance)
+
+    def consume_idempotent(self, *, user_id: str, amount: int, reason: str, idempotency_key: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            balance = self.repository.rpc(
+                "consume_user_credits_idempotent",
+                {
+                    "p_user_id": user_id,
+                    "p_amount": amount,
+                    "p_reason": reason,
+                    "p_idempotency_key": idempotency_key,
+                    "p_metadata": metadata or {},
+                },
+            )
+        except ValueError as exc:
+            if "INSUFFICIENT_CREDITS" in str(exc):
+                _, total = self.has_enough(user_id, amount)
+                raise InsufficientCreditsError(required_credits=amount, current_credits=total) from exc
+            raise
+        return self._normalize_balance(balance)
+
+    def refund_idempotent(self, *, user_id: str, amount: int, reason: str, idempotency_key: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+        balance = self.repository.rpc(
+            "refund_consumed_credits_idempotent",
+            {
+                "p_user_id": user_id,
+                "p_amount": amount,
+                "p_reason": reason,
+                "p_idempotency_key": idempotency_key,
+                "p_metadata": metadata or {},
+            },
+        )
         return self._normalize_balance(balance)
 
     @staticmethod

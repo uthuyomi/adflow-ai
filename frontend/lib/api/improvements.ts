@@ -1,85 +1,111 @@
+"use client";
+
+import { getApiBaseUrl } from "@/lib/api/client";
+import type { Improvement } from "@/lib/schemas";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { DiffResultSchema, Improvement, ReviewResultSchema } from "@/lib/schemas";
-import type { AnalysisRun } from "@/lib/types/adflow";
-import type { z } from "zod";
+import type {
+  AIAgentResult,
+  ImprovementStats,
+  ImprovementStatus,
+  ImprovementStatusHistory,
+  JsonRecord,
+} from "@/lib/types/adflow";
+
+async function requestWithAuth<T>(path: string, init?: RequestInit): Promise<T> {
+  const supabase = getSupabaseBrowserClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("Login is required.");
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<T>;
+}
 
 export async function getImprovements(): Promise<Improvement[]> {
-  const supabase = getSupabaseBrowserClient();
-  const { data, error } = await supabase
-    .from("analysis_runs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (error) throw error;
-  return ((data ?? []) as AnalysisRun[]).flatMap(runToImprovements);
+  const results = await requestWithAuth<AIAgentResult[]>("/improvements?limit=500");
+  return results.map(resultToImprovement);
 }
 
-export async function getImprovementDetail(improvementId: string) {
-  const improvements = await getImprovements();
-  return improvements.find((item) => item.id === improvementId) ?? null;
+export async function getImprovementDetail(improvementId: string): Promise<Improvement> {
+  return resultToImprovement(await requestWithAuth<AIAgentResult>(`/improvements/${improvementId}`));
 }
 
-export async function approveImprovement(improvementId: string) {
-  return { improvementId, status: "Approved" as const };
+export async function getImprovementHistory(improvementId: string) {
+  return requestWithAuth<ImprovementStatusHistory[]>(`/improvements/${improvementId}/history`);
 }
 
-export async function createPullRequest(improvementId: string) {
-  return { improvementId, pr: null };
+export async function getImprovementStats() {
+  return requestWithAuth<ImprovementStats>("/improvements/stats");
 }
 
-function runToImprovements(run: AnalysisRun): Improvement[] {
-  const ad = (run.ad_improvements ?? {}) as Record<string, unknown>;
-  const lp = (run.lp_improvements ?? {}) as Record<string, unknown>;
-  const review = normalizeReview(run.review_result as Record<string, unknown> | null);
-  const diff = normalizeDiff(run.diff_plan as Record<string, unknown> | null);
-  const problems = arrayOfStrings(ad.problems);
-  const suggestions = arrayOfStrings(ad.suggestions);
-  const lpSuggestions = [
-    ...arrayOfStrings(lp.hero),
-    ...arrayOfStrings(lp.cta),
-    ...arrayOfStrings(lp.structure),
-    ...arrayOfStrings(lp.mobile_ui),
-  ];
-  if (!problems.length && !suggestions.length && !lpSuggestions.length) return [];
-  const items = problems.length ? problems : suggestions.length ? suggestions : lpSuggestions;
-  return items.map((problem, index) => ({
-    id: `${run.id}-${index}`,
-    problem,
-    adSuggestions: suggestions,
-    lpSuggestions,
-    confidence: Number(run.score ?? 0),
-    expectedCtrImpact: 0,
-    expectedCvrImpact: 0,
-    riskLevel: riskLevel(run.risk_level),
-    reviewStatus: "Pending",
-    diff,
-    review,
-    campaignId: run.ad_lp_pair_id,
-  }));
+export async function transitionImprovement({
+  improvementId,
+  newStatus,
+  reason,
+}: {
+  improvementId: string;
+  newStatus: ImprovementStatus;
+  reason?: string;
+}) {
+  return requestWithAuth<AIAgentResult>(`/improvements/${improvementId}/transition`, {
+    method: "POST",
+    body: JSON.stringify({ new_status: newStatus, reason }),
+  });
+}
+
+function resultToImprovement(result: AIAgentResult): Improvement {
+  const output = result.output ?? {};
+  const predicted = result.predicted_effect ?? {};
+  const recommendations = arrayOfStrings(output.recommendations);
+  const rationale = arrayOfStrings(output.rationale);
+  const summary = stringValue(output.summary) || rationale[0] || result.task;
+  return {
+    id: result.id,
+    problem: summary,
+    adSuggestions: recommendations,
+    lpSuggestions: rationale,
+    confidence: Number(result.confidence ?? result.score ?? 0),
+    expectedCtrImpact: numberValue(predicted, "ctr_lift"),
+    expectedCvrImpact: numberValue(predicted, "cvr_lift"),
+    riskLevel: riskLevel(result.risk_level),
+    reviewStatus: result.decision_status,
+    providerType: result.provider_type,
+    sourceProvider: result.source_provider,
+    decisionReason: result.decision_reason,
+    statusUpdatedAt: result.status_updated_at || result.decided_at || result.created_at,
+    diff: { files: [] },
+    review: {
+      exaggerated_claims: [],
+      brand_risks: arrayOfStrings(output.risk_flags),
+      ui_risks: [],
+      dangerous_changes: [],
+      approved_for_pr: result.decision_status === "APPLY_READY" || result.decision_status === "APPLIED",
+    },
+    campaignId: result.ad_lp_pair_id ?? "",
+  };
 }
 
 function arrayOfStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function numberValue(value: JsonRecord, key: string) {
+  return typeof value[key] === "number" ? value[key] : 0;
+}
+
 function riskLevel(value: string | null): Improvement["riskLevel"] {
-  if (value === "high") return "High";
-  if (value === "medium") return "Medium";
+  if (value?.toLowerCase() === "high") return "High";
+  if (value?.toLowerCase() === "medium") return "Medium";
   return "Low";
-}
-
-function normalizeDiff(value: Record<string, unknown> | null): z.infer<typeof DiffResultSchema> {
-  return {
-    files: Array.isArray(value?.files) ? value.files as z.infer<typeof DiffResultSchema>["files"] : [],
-  };
-}
-
-function normalizeReview(value: Record<string, unknown> | null): z.infer<typeof ReviewResultSchema> {
-  return {
-    exaggerated_claims: arrayOfStrings(value?.exaggerated_claims),
-    brand_risks: arrayOfStrings(value?.brand_risks),
-    ui_risks: arrayOfStrings(value?.ui_risks),
-    dangerous_changes: arrayOfStrings(value?.dangerous_changes),
-    approved_for_pr: Boolean(value?.approved_for_pr),
-  };
 }

@@ -190,6 +190,7 @@ class RegisteredPairAnalysisService:
         message_match_score = self._message_match_score(twitter_ad, landing_page)
         risk_level = self._risk_level(features.hero_similarity, features.cta_strength, landing_page)
         score = round((features.hero_similarity + features.cta_strength + message_match_score + max(0, 100 - features.bounce_rate)) / 4)
+        recommendation_client = self.openai_llm_client if ai_mode == "openai_only" else self.llm_client
         orchestration = self.orchestrator.run_pair_pipeline(
             user_id=user_id,
             project_id=pair.get("project_id"),
@@ -209,6 +210,9 @@ class RegisteredPairAnalysisService:
                 "features": features.model_dump(mode="json"),
                 "message_match_score": message_match_score,
                 "risk_level": risk_level,
+                "provider_type": getattr(recommendation_client, "provider_type", "MOCK"),
+                "failure_reason": getattr(recommendation_client, "failure_reason", "Unknown AI client provenance."),
+                "source_provider": getattr(recommendation_client, "source_provider", type(recommendation_client).__name__),
             },
             mode=ai_mode,
         )
@@ -245,6 +249,9 @@ class RegisteredPairAnalysisService:
                 "cta_strength": features.cta_strength,
                 "bounce_rate": features.bounce_rate,
                 "risk_level": risk_level,
+                "provider_type": getattr(recommendation_client, "provider_type", "MOCK"),
+                "failure_reason": getattr(recommendation_client, "failure_reason", "Unknown AI client provenance."),
+                "source_provider": getattr(recommendation_client, "source_provider", type(recommendation_client).__name__),
                 "ad_improvements": ad_improvements.model_dump(mode="json"),
                 "lp_improvements": lp_improvements.model_dump(mode="json"),
                 "diff_plan": diff_plan.model_dump(mode="json"),
@@ -252,6 +259,9 @@ class RegisteredPairAnalysisService:
                 "history_insights": {
                     **recommendation.model_dump(mode="json"),
                     "ai_mode": ai_mode,
+                    "provider_type": getattr(recommendation_client, "provider_type", "MOCK"),
+                    "failure_reason": getattr(recommendation_client, "failure_reason", "Unknown AI client provenance."),
+                    "source_provider": getattr(recommendation_client, "source_provider", type(recommendation_client).__name__),
                     "demand_intelligence_run_id": demand_intelligence.get("id") if demand_intelligence else None,
                     "orchestration_run_id": orchestration.run["id"],
                     "route_plan": [step.model_dump(mode="json") for step in orchestration.route_plan],

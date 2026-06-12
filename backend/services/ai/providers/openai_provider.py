@@ -33,22 +33,23 @@ class OpenAIProvider:
                 raise ValueError("OPENAI_API_KEY and OPENAI_FAST_MODEL or OPENAI_MODEL are required for OpenAI-only orchestration.")
             return self.fallback.generate_structured(
                 system_prompt=system_prompt,
-                user_payload={**user_payload, "provider": self.provider_key},
+                user_payload={**user_payload, "provider": self.provider_key, "failure_reason": "OpenAI is not configured."},
                 schema=schema,
                 response_model=response_model,
             )
         try:
-            return OpenAIJSONClient(model=self.model).generate_json(
+            result = OpenAIJSONClient(model=self.model).generate_json(
                 system_prompt=system_prompt,
                 user_payload={**user_payload, "provider": self.provider_key},
                 response_model=response_model,
             )
-        except Exception:
+            return {**result, "provider_type": "REAL", "failure_reason": None, "source_provider": self.provider_key}
+        except Exception as exc:
             if strict_openai:
                 raise
             return self.fallback.generate_structured(
                 system_prompt=system_prompt,
-                user_payload={**user_payload, "provider": self.provider_key},
+                user_payload={**user_payload, "provider": self.provider_key, "failure_reason": f"OpenAI request failed: {type(exc).__name__}"},
                 schema=schema,
                 response_model=response_model,
             )

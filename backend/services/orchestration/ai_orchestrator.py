@@ -40,6 +40,9 @@ class AgentExecutionResult(BaseModel):
     task: str
     agent_key: str
     provider: str
+    provider_type: str
+    failure_reason: str | None = None
+    source_provider: str
     role: str
     input_summary: str
     output: AgentOutput
@@ -284,6 +287,9 @@ class AIOrchestrator:
                     "ad_lp_pair_id": pair_id,
                     "agent_key": result.agent_key,
                     "provider": result.provider,
+                    "provider_type": result.provider_type,
+                    "failure_reason": result.failure_reason,
+                    "source_provider": result.source_provider,
                     "role": result.role,
                     "task": result.task,
                     "input_summary": result.input_summary,
@@ -293,7 +299,7 @@ class AIOrchestrator:
                     "confidence": result.output.confidence,
                     "predicted_effect": result.output.predicted_effect,
                     "status": "completed",
-                    "decision_status": "pending",
+                    "decision_status": "GENERATED",
                 },
             )
             self._update_scorecard(user_id=user_id, inserted=inserted, platform=platform, metric=self._metric_for_task(result.task))
@@ -328,18 +334,13 @@ class AIOrchestrator:
         decision_status: str,
         decision_reason: str | None = None,
     ) -> dict[str, Any]:
-        if decision_status not in {"pending", "accepted", "rejected", "needs_review", "apply_ready"}:
-            raise ValueError("Invalid decision_status.")
-        result = self.repository.update(
-            "ai_agent_results",
+        from backend.services.improvements.improvement_workflow_service import ImprovementWorkflowService
+
+        result = ImprovementWorkflowService(self.repository).transition(
             user_id=user_id,
-            filters={"id": result_id},
-            payload={
-                "decision_status": decision_status,
-                "decision_reason": decision_reason,
-                "decided_at": datetime.now(timezone.utc).isoformat(),
-                "accepted_by": user_id if decision_status in {"accepted", "apply_ready"} else None,
-            },
+            improvement_id=result_id,
+            new_status=decision_status,
+            reason=decision_reason,
         )
         run = self.repository.get_one("ai_orchestration_runs", user_id=user_id, filters={"id": result["orchestration_run_id"]})
         self.recalculate_scorecard(
@@ -348,26 +349,14 @@ class AIOrchestrator:
             platform=run["platform"],
             metric=self._metric_for_task(result["task"]),
         )
-        self.repository.insert(
-            "change_history",
-            {
-                "user_id": user_id,
-                "project_id": result.get("project_id"),
-                "entity_type": "ai_agent_result",
-                "entity_id": result_id,
-                "action": f"decision:{decision_status}",
-                "before_data": None,
-                "after_data": {"decision_status": decision_status, "decision_reason": decision_reason},
-                "summary": f"{result['agent_key']} marked {decision_status}",
-                "reason": decision_reason,
-            },
-        )
         return result
 
     def build_codex_task_prompt(self, *, user_id: str, result_id: str) -> dict[str, Any]:
         result = self.repository.get_one("ai_agent_results", user_id=user_id, filters={"id": result_id})
-        if result.get("decision_status") != "apply_ready":
-            raise ValueError("AI result must be apply_ready before generating a Codex task.")
+        if result.get("decision_status") != "APPLY_READY":
+            raise ValueError("AI result must be APPLY_READY before generating a Codex task.")
+        if result.get("provider_type") != "REAL":
+            raise ValueError("Mock AI results cannot generate Codex tasks.")
         output = result.get("output") or {}
         title = str(output.get("summary") or result.get("task") or "Approved AI proposal")[:80]
         prompt = {
@@ -400,7 +389,7 @@ class AIOrchestrator:
                 "constraints": prompt["constraints"],
                 "acceptance_criteria": prompt["acceptance_criteria"],
                 "prompt": prompt,
-                "status": "draft",
+                "status": "CREATED",
             },
         )
 
@@ -425,17 +414,27 @@ class AIOrchestrator:
             if provider
             else self._fallback_output(step, context)
         )
+        provider_type = str(output_payload.pop("provider_type", "MOCK")).upper()
+        if provider_type not in {"REAL", "MOCK"}:
+            provider_type = "MOCK"
+        failure_reason = output_payload.pop("failure_reason", None)
+        source_provider = str(output_payload.pop("source_provider", step.provider))
         output = AgentOutput.model_validate(output_payload)
         return AgentExecutionResult(
             task=step.task,
             agent_key=step.agent_key,
             provider=step.provider,
+            provider_type=provider_type,
+            failure_reason=str(failure_reason) if failure_reason else None,
+            source_provider=source_provider,
             role=step.role,
             input_summary=input_summary,
             output=output,
         )
 
     def _update_scorecard(self, *, user_id: str, inserted: dict[str, Any], platform: str, metric: str) -> None:
+        if inserted.get("provider_type") != "REAL":
+            return
         score = inserted.get("score")
         if score is None:
             return
@@ -477,12 +476,17 @@ class AIOrchestrator:
         )
 
     def recalculate_scorecard(self, *, user_id: str, agent_key: str, platform: str, metric: str) -> None:
-        results = self.repository.get_many("ai_agent_results", user_id=user_id, filters={"agent_key": agent_key}, limit=200)
+        results = self.repository.get_many(
+            "ai_agent_results",
+            user_id=user_id,
+            filters={"agent_key": agent_key, "provider_type": "REAL"},
+            limit=200,
+        )
         if not results:
             return
-        accepted = [item for item in results if item.get("decision_status") == "accepted"]
-        rejected = [item for item in results if item.get("decision_status") == "rejected"]
-        apply_ready = [item for item in results if item.get("decision_status") == "apply_ready"]
+        accepted = [item for item in results if item.get("decision_status") in {"APPROVED", "APPLY_READY", "APPLIED"}]
+        rejected = [item for item in results if item.get("decision_status") == "REJECTED"]
+        apply_ready = [item for item in results if item.get("decision_status") == "APPLY_READY"]
         confidences = [float(item.get("confidence") or 0) for item in results]
         risks = [self._risk_penalty(item.get("risk_level")) for item in results]
         effects = [item.get("predicted_effect") or {} for item in results]
@@ -578,6 +582,9 @@ class AIOrchestrator:
             "next_action": "Review before marking apply-ready.",
             "confidence": 0.65,
             "predicted_effect": {"ctr_lift": 1.0, "cvr_lift": 0.5, "bounce_reduction": 2.0},
+            "provider_type": "MOCK",
+            "failure_reason": "No AI provider registry was configured.",
+            "source_provider": step.provider,
         }
 
     @staticmethod

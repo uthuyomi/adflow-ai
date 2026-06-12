@@ -8,6 +8,10 @@ from pydantic import BaseModel
 
 
 class OpenAIJSONClient:
+    provider_type = "REAL"
+    source_provider = "openai"
+    failure_reason = None
+
     def __init__(self, *, model: str) -> None:
         self.client = OpenAI()
         self.model = model

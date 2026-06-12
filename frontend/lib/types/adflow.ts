@@ -192,6 +192,9 @@ export type AIHistoryBasedRecommendation = {
     task: string;
     agent_key: string;
     provider: string;
+    provider_type: "REAL" | "MOCK";
+    failure_reason: string | null;
+    source_provider: string;
     role: string;
     input_summary: string;
     output: {
@@ -216,6 +219,9 @@ export type AnalysisRun = {
   cta_strength: number | null;
   bounce_rate: number | null;
   risk_level: string | null;
+  provider_type: "REAL" | "MOCK";
+  failure_reason: string | null;
+  source_provider: string;
   ad_improvements: JsonRecord | null;
   lp_improvements: JsonRecord | null;
   diff_plan: JsonRecord | null;
@@ -267,20 +273,46 @@ export type AIAgentResult = {
   ad_lp_pair_id: UUID | null;
   agent_key: string;
   provider: string;
+  provider_type: "REAL" | "MOCK";
+  failure_reason: string | null;
+  source_provider: string;
   role: string;
   task: string;
   input_summary: string | null;
   output: JsonRecord;
   score: number | null;
   risk_level: string | null;
-  decision_status: "pending" | "accepted" | "rejected" | "needs_review" | "apply_ready";
+  decision_status: ImprovementStatus;
   decision_reason: string | null;
   decided_at: string | null;
   accepted_by: UUID | null;
+  updated_by: UUID | null;
+  status_updated_at: string;
+  apply_ready_metadata: JsonRecord;
   confidence: number | null;
   predicted_effect: JsonRecord;
   status: string;
   created_at: string;
+};
+
+export type ImprovementStatus = "GENERATED" | "APPROVED" | "REJECTED" | "APPLY_READY" | "APPLIED" | "FAILED";
+
+export type ImprovementStatusHistory = {
+  id: UUID;
+  improvement_id: UUID;
+  user_id: UUID;
+  old_status: ImprovementStatus | null;
+  new_status: ImprovementStatus;
+  changed_by: UUID;
+  changed_at: string;
+  reason: string | null;
+};
+
+export type ImprovementStats = {
+  total: number;
+  counts: Record<ImprovementStatus, number>;
+  approval_rate: number;
+  rejection_rate: number;
 };
 
 export type AIAgentScorecard = {
@@ -316,8 +348,30 @@ export type CodexTaskPrompt = {
   constraints: string[];
   acceptance_criteria: string[];
   prompt: JsonRecord;
-  status: string;
+  status: CodexTaskStatus;
+  summary: string | null;
+  updated_at: string;
+  last_run_at: string | null;
+  result_summary: string | null;
+  execution_mode: CodexExecutionMode | null;
+  pr_url: string | null;
+  outcome_id: UUID | null;
+  error_message: string | null;
+  error_code: string | null;
   created_at: string;
+};
+
+export type CodexTaskStatus = "CREATED" | "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "PR_CREATED" | "OUTCOME_CREATED";
+export type CodexExecutionMode = "REAL_EXECUTION" | "MANUAL_EXECUTION" | "MOCK";
+export type CodexExecution = {
+  id: UUID; task_id: UUID; execution_mode: CodexExecutionMode; status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+  started_at: string | null; finished_at: string | null; stdout: string | null; stderr: string | null; summary: string | null;
+  files_changed: Array<{ path: string; content: string }>; diff_summary: string | null; error_message: string | null; error_code: string | null; created_at: string;
+};
+export type CodexTaskDetail = {
+  task: CodexTaskPrompt; improvement: AIAgentResult; project: AdProject | null; pair: AdLpPair | null; ad: TwitterAd | null; landing_page: LandingPage | null;
+  history: Array<{ id: UUID; old_status: CodexTaskStatus | null; new_status: CodexTaskStatus; reason: string | null; changed_at: string }>;
+  executions: CodexExecution[]; pull_requests: Array<{ id: UUID; pr_url: string | null; pr_number: number | null; status: string }>; outcomes: ImprovementOutcome[];
 };
 
 export type DemandCluster = {
@@ -342,6 +396,7 @@ export type DemandCluster = {
   noise_ratio: number;
   duplicate_ratio: number;
   evidence_quality_score: number;
+  data_source_type: "REAL" | "SYNTHETIC";
 };
 
 export type DemandOpportunity = {
@@ -415,6 +470,7 @@ export type DemandIntelligenceSignal = {
   run_id: UUID;
   collected_at: string;
   source_type: string;
+  data_source_type: "REAL" | "SYNTHETIC";
   source_name: string;
   external_id: string | null;
   connector_key: string | null;
@@ -575,6 +631,7 @@ export type DemandSearchSignal = {
   query: string;
   keyword: string;
   source_type: string;
+  data_source_type: "REAL" | "SYNTHETIC";
   search_volume_estimate: number | null;
   competition_level: string | null;
   cpc_estimate: number | null;
@@ -595,6 +652,7 @@ export type DemandMarketSizeEstimate = {
   ad_lp_pair_id: UUID | null;
   cluster_id: UUID | null;
   segment_name: string;
+  data_source_type: "REAL" | "SYNTHETIC";
   persona: string | null;
   estimated_audience_size_min: number | null;
   estimated_audience_size_max: number | null;

@@ -116,8 +116,8 @@ export default function ResultsPage() {
                 <Card className="p-4" key={pr.id}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="font-medium">{pr.title}</div>
-                      <div className="mt-1 text-sm text-muted-foreground">{pr.url || t("results.noPrUrl")}</div>
+                      <div className="font-medium">{pr.pr_title}</div>
+                      <div className="mt-1 text-sm text-muted-foreground">{pr.pr_url || t("results.noPrUrl")}</div>
                     </div>
                     <Badge>{pr.status}</Badge>
                   </div>

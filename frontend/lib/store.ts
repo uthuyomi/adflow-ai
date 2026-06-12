@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-type DialogMode = "approve" | "reject" | "pr" | null;
+type DialogMode = "approve" | "reject" | "pr" | "applied" | "failed" | null;
 export type AnalysisAIMode = "openai_only" | "multi_provider";
 export type Locale = "en" | "ja";
 

@@ -5,6 +5,7 @@ import { Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,6 +50,14 @@ export function XAdsPublishDraftDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="mt-5 space-y-4">
+          {result ? (
+            <div className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+              <span>{result.source_provider}</span>
+              <Badge variant={result.provider_type === "REAL" ? "secondary" : "warning"}>
+                {result.provider_type === "REAL" ? "実AI結果" : "モック結果"}
+              </Badge>
+            </div>
+          ) : null}
           <label className="space-y-1 text-sm">
             <span className="font-medium">{t("xAds.account")}</span>
             <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" onChange={(event) => setAccountId(event.target.value)} value={accountId}>

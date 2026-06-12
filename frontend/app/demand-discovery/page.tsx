@@ -476,6 +476,9 @@ function ResearchPanel({
       {hasResearch ? (
         <div className="mt-4 space-y-4">
           <div className="flex flex-wrap gap-2 text-xs">
+            <span className={cn("rounded-md border px-2 py-1 font-medium", sourceKind === "real" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-900")}>
+              {sourceKind === "real" ? "実測値" : "参考推定値"}
+            </span>
             <span className="rounded-md border border-border px-2 py-1">
               {t("demandDiscovery.sourceType")}: {t(`demandDiscovery.sourceKind.${sourceKind}`)}
             </span>
@@ -510,6 +513,7 @@ function ResearchPanel({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-medium">{cluster.name || t("demandDiscovery.unknownPain")}</p>
                 <div className="flex gap-2 text-xs text-muted-foreground">
+                  <span className="rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-900">参考推定値</span>
                   <span>{t("demandDiscovery.demandScore")}: {Math.round(cluster.demand_signal_score ?? 0)}</span>
                   <span>{t("demandDiscovery.validationScore")}: {Math.round(cluster.validation_score ?? 0)}</span>
                 </div>

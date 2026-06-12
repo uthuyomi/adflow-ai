@@ -17,7 +17,7 @@ export function ImprovementCard({ improvement }: { improvement: Improvement }) {
             </div>
           </div>
           <Badge variant={improvement.riskLevel === "Medium" ? "warning" : "secondary"}>
-            {improvement.riskLevel}
+            {improvement.reviewStatus}
           </Badge>
         </div>
         <div className="mt-5">
@@ -26,6 +26,10 @@ export function ImprovementCard({ improvement }: { improvement: Improvement }) {
             <span className="font-semibold">{improvement.confidence}%</span>
           </div>
           <Progress value={improvement.confidence} />
+          <div className="mt-3 flex justify-between text-xs text-muted-foreground">
+            <span>{improvement.providerType === "REAL" ? "実AI結果" : "モック結果"}</span>
+            <span>{new Date(improvement.statusUpdatedAt).toLocaleDateString()}</span>
+          </div>
         </div>
       </Card>
     </Link>
