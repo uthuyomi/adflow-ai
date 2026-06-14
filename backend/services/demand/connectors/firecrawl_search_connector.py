@@ -13,6 +13,7 @@ from backend.services.demand.demand_models import DemandConnectorRequest, Demand
 
 class FirecrawlSearchDemandConnector:
     connector_key = "firecrawl_search"
+    connector_type = "search"
     source_type = "google_search"
 
     def __init__(self, settings: Settings) -> None:

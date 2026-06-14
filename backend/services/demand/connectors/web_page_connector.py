@@ -10,6 +10,7 @@ from backend.services.demand.demand_models import DemandConnectorRequest, Demand
 
 class WebPageDemandConnector:
     connector_key = "web_page"
+    connector_type = "competitor"
     source_type = "competitor_lp"
 
     def __init__(self, settings: Settings) -> None:

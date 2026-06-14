@@ -222,6 +222,12 @@ class SupabaseRepository:
     def insert_demand_outcome_learning_links(self, links: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [self.insert("demand_outcome_learning_links", link) for link in links]
 
+    def insert_demand_evidence(self, evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [self.insert("demand_evidence", row) for row in evidence]
+
+    def insert_demand_competitors(self, competitors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [self.insert("demand_competitors", row) for row in competitors]
+
     def get_demand_snapshots_for_cluster(
         self,
         *,
@@ -246,6 +252,15 @@ class SupabaseRepository:
 
     def get_demand_evidence_for_run(self, *, run_id: str) -> list[dict[str, Any]]:
         return self.get_related_many("demand_intelligence_signals", filters={"run_id": run_id}, order="created_at.asc")
+
+    def get_real_demand_evidence_for_run(self, *, user_id: str, run_id: str) -> list[dict[str, Any]]:
+        return self.get_many("demand_evidence", user_id=user_id, filters={"run_id": run_id}, order="relevance_score.desc")
+
+    def get_demand_competitors_for_run(self, *, user_id: str, run_id: str) -> list[dict[str, Any]]:
+        return self.get_many("demand_competitors", user_id=user_id, filters={"run_id": run_id}, order="created_at.asc")
+
+    def get_demand_score_for_run(self, *, user_id: str, run_id: str) -> dict[str, Any]:
+        return self.get_one("demand_scores", user_id=user_id, filters={"run_id": run_id})
 
     def get_demand_search_signals_for_run(self, *, user_id: str, run_id: str) -> list[dict[str, Any]]:
         return self.get_many("demand_search_signals", user_id=user_id, filters={"run_id": run_id}, order="created_at.desc")

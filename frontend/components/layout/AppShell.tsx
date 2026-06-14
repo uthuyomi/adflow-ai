@@ -44,7 +44,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (isPublic) {
     return (
       <div className="min-h-screen bg-background">
-        {bridge}
         <PublicHeader />
         <main>{children}</main>
         <PublicFooter />

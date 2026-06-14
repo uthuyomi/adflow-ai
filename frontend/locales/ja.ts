@@ -3,7 +3,8 @@ import { en } from "@/locales/en";
 export const ja = {
   ...en,
   "meta.default.description": "需要シグナルを発見し、AIで広告とLPを改善。",
-  "meta.home.description": "需要シグナルを発見し、AIで広告とLPを改善。",
+  "meta.home.title": "AdFlow AI | 開発判断プラットフォーム",
+  "meta.home.description": "何か月も作り込む前に、市場の根拠を開発判断、ポジショニング、次の推奨アクションへ変換します。",
   "meta.features.title": "AdFlow AI 機能一覧",
   "meta.features.description": "需要シグナル、広告LP分析、AIレビュー、Outcome Learningを確認できます。",
   "meta.pricing.title": "AdFlow AI 料金",
@@ -641,6 +642,7 @@ export const ja = {
   "nav.adOptimization": "広告改善",
   "nav.demandDiscovery": "需要発見",
   "nav.results": "結果",
+  "nav.outcomes": "成果",
 
   "adOptimization.title": "広告改善",
   "adOptimization.description": "広告とランディングページを1つの改善ワークフローとして管理し、設定、分析、提案、実測結果まで確認できます。",

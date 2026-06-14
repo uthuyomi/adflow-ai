@@ -16,6 +16,7 @@ import { useProjects } from "@/hooks/use-projects";
 import { useTwitterAds } from "@/hooks/use-twitter-ads";
 import { useDemandIntelligenceDashboard, useOutcomesDashboard } from "@/hooks/useAdflowData";
 import { useImprovementStats } from "@/hooks/useImprovement";
+import { useOutcomeStats } from "@/hooks/use-outcomes";
 
 export default function DashboardPage() {
   const { t } = useI18n();
@@ -26,8 +27,9 @@ export default function DashboardPage() {
   const demand = useDemandIntelligenceDashboard();
   const outcomes = useOutcomesDashboard();
   const improvementStats = useImprovementStats();
-  const isLoading = projects.isLoading || ads.isLoading || landingPages.isLoading || pairs.isLoading || demand.isLoading || outcomes.isLoading || improvementStats.isLoading;
-  const isError = projects.isError || ads.isError || landingPages.isError || pairs.isError || demand.isError || outcomes.isError || improvementStats.isError;
+  const outcomeStats = useOutcomeStats();
+  const isLoading = projects.isLoading || ads.isLoading || landingPages.isLoading || pairs.isLoading || demand.isLoading || outcomes.isLoading || improvementStats.isLoading || outcomeStats.isLoading;
+  const isError = projects.isError || ads.isError || landingPages.isError || pairs.isError || demand.isError || outcomes.isError || improvementStats.isError || outcomeStats.isError;
 
   if (isLoading) return <PageSkeleton />;
   if (isError) return <ErrorState />;
@@ -82,6 +84,17 @@ export default function DashboardPage() {
           <ResultRow label="Apply Ready" value={improvementStats.data?.counts.APPLY_READY ?? 0} />
           <ResultRow label="Applied" value={improvementStats.data?.counts.APPLIED ?? 0} />
           <ResultRow label="Failed" value={improvementStats.data?.counts.FAILED ?? 0} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>Outcome learning</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <ResultRow label="Total outcomes" value={outcomeStats.data?.total ?? 0} />
+          <ResultRow label="Success rate %" value={outcomeStats.data?.success_rate ?? 0} />
+          <ResultRow label="Failure rate %" value={outcomeStats.data?.failure_rate ?? 0} />
+          <ResultRow label="Avg improvement %" value={Math.round((outcomeStats.data?.average_improvement_rate ?? 0) * 10000) / 100} />
+          <ResultRow label="Avg CTR improvement %" value={Math.round((outcomeStats.data?.average_ctr_improvement ?? 0) * 10000) / 100} />
+          <ResultRow label="Learning records" value={outcomeStats.data?.learning.learning_count ?? 0} />
         </CardContent>
       </Card>
     </div>

@@ -108,9 +108,25 @@ class CodexTaskService:
         temp_root = Path(tempfile.mkdtemp(prefix="adflow-codex-"))
         temp_dir = temp_root / "worktree"
         try:
-            subprocess.run(["git", "worktree", "add", "--detach", str(temp_dir), "HEAD"], cwd=workspace, check=True, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "worktree", "add", "--detach", str(temp_dir), "HEAD"],
+                cwd=workspace,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             prompt = self._execution_prompt(task)
-            process = subprocess.Popen([self.settings.codex_executable, "exec", "--ephemeral", "-s", "workspace-write", "-C", str(temp_dir), prompt], cwd=temp_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            process = subprocess.Popen(
+                [self.settings.codex_executable, "exec", "--ephemeral", "-s", "workspace-write", "-C", str(temp_dir), prompt],
+                cwd=temp_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             with _PROCESS_LOCK:
                 _PROCESSES[task_id] = process
             stdout, stderr = process.communicate(timeout=self.settings.codex_execution_timeout_seconds)
@@ -125,7 +141,14 @@ class CodexTaskService:
         finally:
             with _PROCESS_LOCK:
                 _PROCESSES.pop(task_id, None)
-            subprocess.run(["git", "worktree", "remove", "--force", str(temp_dir)], cwd=workspace, capture_output=True, text=True)
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(temp_dir)],
+                cwd=workspace,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             shutil.rmtree(temp_root, ignore_errors=True)
 
     def cancel(self, *, user_id: str, task_id: str, reason: str) -> dict[str, Any]:
@@ -249,7 +272,13 @@ class CodexTaskService:
 
     @staticmethod
     def _changed_files(worktree: Path) -> list[dict[str, Any]]:
-        output = subprocess.check_output(["git", "status", "--porcelain"], cwd=worktree, text=True)
+        output = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            cwd=worktree,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         files = []
         for line in output.splitlines():
             path = line[3:].strip()
@@ -262,8 +291,22 @@ class CodexTaskService:
 
     @staticmethod
     def _diff_summary(worktree: Path) -> str:
-        status = subprocess.run(["git", "status", "--short"], cwd=worktree, capture_output=True, text=True).stdout.strip()
-        stat = subprocess.run(["git", "diff", "--stat"], cwd=worktree, capture_output=True, text=True).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        ).stdout.strip()
+        stat = subprocess.run(
+            ["git", "diff", "--stat"],
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        ).stdout.strip()
         return "\n".join(part for part in (stat, status) if part)
 
     def configuration(self) -> dict[str, Any]:

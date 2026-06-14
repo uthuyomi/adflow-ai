@@ -425,7 +425,14 @@ class XAdsService:
                 outcome = ImprovementOutcomeService(repository=self.repository).create_outcome(
                     user_id=user_id, project_id=request.get("project_id"), ad_lp_pair_id=request["ad_lp_pair_id"],
                     source_ai_result_id=request["source_ai_result_id"], title=f"Measure approved X ad variant: {created_ad['name']}",
-                    description=request.get("hypothesis"), before_metrics=_ad_metrics(source_ad),
+                    description=request.get("hypothesis"),
+                    expected_impact={"primary_metric": request.get("primary_metric") or "ctr"},
+                    measurement_plan={"source": "X_ADS", "primary_metrics": [request.get("primary_metric") or "ctr"]},
+                )
+                outcome = ImprovementOutcomeService(repository=self.repository).transition(
+                    user_id=user_id, outcome_id=outcome["id"], new_status="PENDING_MEASUREMENT",
+                    reason="Published X Ads variant is ready for measurement.",
+                    payload={"before_metrics": _ad_metrics(source_ad), "measurement_source": "X_ADS"},
                 )
                 request = self.repository.update("x_ads_publish_requests", user_id=user_id, filters={"id": request_id}, payload={"outcome_id": outcome["id"]})
             updated = self.repository.update(
@@ -629,10 +636,13 @@ class XAdsService:
         requests = self.repository.get_many("x_ads_publish_requests", user_id=user_id, filters={"id": publish_request_id}, limit=1)
         if not requests or not requests[0].get("outcome_id"):
             return
-        ImprovementOutcomeService(repository=self.repository).update_outcome(
-            user_id=user_id,
-            outcome_id=requests[0]["outcome_id"],
-            payload={"after_metrics": _ad_metrics(ad), "measured_at": _now(), "outcome_status": "measured"},
+        service = ImprovementOutcomeService(repository=self.repository)
+        outcome = service.detail(user_id=user_id, outcome_id=requests[0]["outcome_id"])["outcome"]
+        service.record_measurement(
+            user_id=user_id, outcome_id=outcome["id"],
+            before_metrics=outcome.get("before_metrics") or {},
+            after_metrics=_ad_metrics(ad), measurement_method="X Ads detailed sync",
+            measurement_source="X_ADS", evidence_data=[{"twitter_ad_id": ad["id"], "synced_at": _now()}],
         )
 
     def _event(self, *, user_id: str, request_id: str, event_type: str, status: str, response: dict[str, Any] | None = None, error: str | None = None) -> None:

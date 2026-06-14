@@ -701,6 +701,9 @@ function DemandIntelligencePanel({
   const positioning = summary.recommended_positioning;
   const lpContext = summary.lp_improvement_context;
   const summaryEvidence = summary.evidence_summary ?? [];
+  const realEvidence = ((summary.real_evidence_summary as JsonRecord | undefined)?.sources as JsonRecord[] | undefined) ?? [];
+  const demandScore = (summary.demand_score_summary as JsonRecord | undefined) ?? {};
+  const discoveredCompetitors = ((summary.competitor_discovery_summary as JsonRecord | undefined)?.competitors as JsonRecord[] | undefined) ?? [];
 
   return (
     <div className="space-y-4">
@@ -747,6 +750,8 @@ function DemandIntelligencePanel({
                 <div>Query: {run.query}</div>
                 <div>Signals: {run.signals.length}</div>
                 <div>Clusters: {run.clusters.length}</div>
+                <div>Real evidence: {String((summary.real_evidence_summary as JsonRecord | undefined)?.count ?? 0)}</div>
+                <div>Demand score: {String(demandScore.score ?? "-")}</div>
                 <div>Created: {new Date(run.created_at).toLocaleString()}</div>
               </div>
             </Card>
@@ -799,6 +804,17 @@ function DemandIntelligencePanel({
                 )) : <EmptyState title="No competitor gaps" description="Run demand intelligence to collect unresolved competitor gaps." />}
               </CardContent>
             </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-base">Discovered Competitors</CardTitle></CardHeader>
+              <CardContent className="grid gap-3">
+                {discoveredCompetitors.length ? discoveredCompetitors.slice(0, 10).map((item) => (
+                  <a className="rounded-md border border-border p-3 text-sm hover:bg-muted" href={String(item.source_url)} key={String(item.domain)} rel="noreferrer" target="_blank">
+                    <div className="font-medium">{String(item.name)}</div>
+                    <div className="mt-1 text-muted-foreground">{String(item.domain)} / {String(item.category)}</div>
+                  </a>
+                )) : <EmptyState title="No evidence-backed competitors" description="No competitor domains were found in real evidence." />}
+              </CardContent>
+            </Card>
 
             <Card>
               <CardHeader>
@@ -828,7 +844,26 @@ function DemandIntelligencePanel({
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Evidence Explorer</CardTitle>
+              <CardTitle className="text-base">Real Evidence and Citations</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {realEvidence.map((item) => (
+                <a className="rounded-md border border-border p-3 text-sm hover:bg-muted" href={String(item.source_url)} key={`${String(item.connector)}-${String(item.source_url)}`} rel="noreferrer" target="_blank">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium">{String(item.title)}</div>
+                    <div className="flex gap-2"><Badge variant="secondary">実データ</Badge><Badge variant="outline">{String(item.connector)}</Badge></div>
+                  </div>
+                  <p className="mt-2 text-muted-foreground">{String(item.quote)}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">Relevance: {String(item.relevance_score)}</p>
+                </a>
+              ))}
+              {!realEvidence.length ? <EmptyState title="No real evidence" description="The report cannot make an evidence-backed demand claim until a real connector returns sources." /> : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Cluster Evidence Mapping</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-3">
               {summaryEvidence.length ? summaryEvidence.slice(0, 12).map((item) => (
@@ -1218,7 +1253,6 @@ function OutcomesPanel({
               onClick={() => onUpdate(selected.id, {
                 before_metrics: parseMetrics(beforeMetrics),
                 after_metrics: parseMetrics(afterMetrics),
-                outcome_status: "measured",
                 measured_at: new Date().toISOString(),
                 learning_notes: learningNotes || selected.learning_notes,
               })}
@@ -1241,7 +1275,7 @@ function OutcomesPanel({
                     <div className="font-semibold">{outcome.title}</div>
                     <p className="mt-1 text-sm text-muted-foreground">{outcome.description ?? "No description"}</p>
                   </div>
-                  <Badge variant={outcome.outcome_status === "negative" ? "warning" : "secondary"}>{outcome.outcome_status}</Badge>
+                  <Badge variant={outcome.outcome_status === "FAILED" ? "warning" : "secondary"}>{outcome.outcome_status}</Badge>
                 </div>
                 <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
                   <MetricDelta label="CTR delta" value={delta.ctr_delta} />

@@ -11,6 +11,7 @@ from backend.services.demand.demand_models import DemandConnectorRequest, Demand
 
 class XDemandConnector:
     connector_key = "x"
+    connector_type = "social"
     source_type = "x"
 
     def __init__(self, settings: Settings) -> None:
@@ -23,9 +24,11 @@ class XDemandConnector:
         if not self.settings.x_api_bearer_token:
             return DemandConnectorResponse(source_type=self.source_type, connector_key=self.connector_key, status="skipped", metadata={"reason": "missing_api_key"})
         try:
-            query = (request.expanded_queries[0] if request.expanded_queries else request.query) + " lang:ja"
+            language = request.language if request.language in {"ja", "en"} else None
+            language_filter = f" lang:{language}" if language else ""
+            query = f"{request.query}{language_filter} -is:retweet"
             response = requests.get(
-                "https://api.twitter.com/2/tweets/search/recent",
+                f"{self.settings.x_api_base_url.rstrip('/')}/tweets/search/recent",
                 params={
                     "query": query,
                     "max_results": min(max(request.max_results, 10), 100),
@@ -38,6 +41,13 @@ class XDemandConnector:
             payload = response.json()
             signals = [self._signal(item) for item in payload.get("data", [])]
             return DemandConnectorResponse(source_type=self.source_type, connector_key=self.connector_key, status="completed", signals=signals, metadata={"query": query})
+        except requests.HTTPError as exc:
+            code = exc.response.status_code if exc.response is not None else None
+            return DemandConnectorResponse(
+                source_type=self.source_type, connector_key=self.connector_key,
+                status="unavailable" if code in {401, 403, 429} else "failed",
+                error_message=str(exc), metadata={"reason": f"http_{code}" if code else "http_error"},
+            )
         except Exception as exc:
             return DemandConnectorResponse(source_type=self.source_type, connector_key=self.connector_key, status="failed", error_message=str(exc))
 

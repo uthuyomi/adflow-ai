@@ -199,6 +199,7 @@ class DemandIntelligenceRunRequest(BaseModel):
     ad_lp_pair_id: str
     query: str
     locale: Literal["ja", "en"] = "ja"
+    idempotency_key: str = Field(min_length=8, max_length=200)
 
 
 class DemandSolutionFitRequest(BaseModel):
@@ -292,10 +293,13 @@ class OutcomeCreateRequest(BaseModel):
     ad_lp_pair_id: str
     source_ai_result_id: str | None = None
     source_codex_task_id: str | None = None
+    source_github_pr_id: str | None = None
     title: str
     description: str | None = None
     before_metrics: dict[str, Any] = Field(default_factory=dict)
     after_metrics: dict[str, Any] = Field(default_factory=dict)
+    expected_impact: dict[str, Any] = Field(default_factory=dict)
+    measurement_plan: dict[str, Any] = Field(default_factory=dict)
 
 
 class OutcomeUpdateRequest(BaseModel):
@@ -308,6 +312,34 @@ class OutcomeUpdateRequest(BaseModel):
     learning_notes: str | None = None
     title: str | None = None
     description: str | None = None
+    measurement_method: str | None = None
+    measurement_source: str | None = None
+    evidence_data: list[dict[str, Any]] | None = None
+    evaluation_thresholds: dict[str, Any] | None = None
+    measurement_period: dict[str, Any] | None = None
+
+
+class OutcomeMeasurementRequest(BaseModel):
+    before_metrics: dict[str, Any]
+    after_metrics: dict[str, Any]
+    measurement_method: str = Field(min_length=1, max_length=200)
+    measurement_source: str = Field(default="MANUAL", min_length=1, max_length=80)
+    evidence_data: list[dict[str, Any]] = Field(default_factory=list)
+    evaluation_thresholds: dict[str, Any] = Field(default_factory=dict)
+    measurement_period: dict[str, Any] = Field(default_factory=dict)
+
+
+class OutcomeTransitionRequest(BaseModel):
+    status: str
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class OutcomeConnectorRequest(BaseModel):
+    connector_key: str = Field(min_length=1, max_length=80)
+
+
+class OutcomeFromGitHubRequest(BaseModel):
+    pull_request_id: str
 
 
 def _authenticated_user_id(authorization: str | None = Header(default=None)) -> str:
@@ -833,13 +865,15 @@ def run_demand_intelligence(
             ad_lp_pair_id=request.ad_lp_pair_id,
             query=request.query,
             locale=request.locale,
+            research_fingerprint=request.idempotency_key,
         )
-        _consume_feature_credits(
-            user_id=user_id,
-            feature_key="demand_intelligence",
-            metadata={"endpoint": "/demand-intelligence/run", "run_id": run["id"]},
-        )
-        return {"run_id": run["id"], "status": run["status"], "run": run}
+        if not run.get("_reused"):
+            _consume_feature_credits(
+                user_id=user_id,
+                feature_key="demand_intelligence",
+                metadata={"endpoint": "/demand-intelligence/run", "run_id": run["id"], "idempotency_key": request.idempotency_key},
+            )
+        return {"run_id": run["id"], "status": run["status"], "run": run, "reused": bool(run.get("_reused"))}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -955,6 +989,21 @@ def get_demand_evidence(run_id: str, user_id: str = Depends(_authenticated_user_
     return _repository_for_settings(load_settings()).get_demand_evidence_for_run(run_id=run_id)
 
 
+@app.get("/demand-intelligence/runs/{run_id}/real-evidence")
+def get_real_demand_evidence(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _repository_for_settings(load_settings()).get_real_demand_evidence_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.get("/demand-intelligence/runs/{run_id}/competitors")
+def get_demand_competitors(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _repository_for_settings(load_settings()).get_demand_competitors_for_run(user_id=user_id, run_id=run_id)
+
+
+@app.get("/demand-intelligence/runs/{run_id}/score")
+def get_demand_score(run_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _repository_for_settings(load_settings()).get_demand_score_for_run(user_id=user_id, run_id=run_id)
+
+
 @app.post("/demand-intelligence/runs/{run_id}/solution-fit")
 def run_demand_solution_fit(
     run_id: str,
@@ -1002,10 +1051,13 @@ def create_outcome(
             ad_lp_pair_id=request.ad_lp_pair_id,
             source_ai_result_id=request.source_ai_result_id,
             source_codex_task_id=request.source_codex_task_id,
+            source_github_pr_id=request.source_github_pr_id,
             title=request.title,
             description=request.description,
             before_metrics=request.before_metrics,
             after_metrics=request.after_metrics,
+            expected_impact=request.expected_impact,
+            measurement_plan=request.measurement_plan,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1033,6 +1085,45 @@ def latest_outcome_for_pair(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/outcomes")
+def list_outcomes(
+    project_id: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    sort: str = "newest",
+    date_from: str | None = None,
+    date_to: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_outcome_service(load_settings()).list_outcomes(user_id=user_id, project_id=project_id, status=status, search=search, sort=sort, date_from=date_from, date_to=date_to)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/outcomes/stats")
+def get_outcome_stats(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_outcome_service(load_settings()).stats(user_id=user_id)
+
+
+@app.get("/outcomes/learning")
+def get_outcome_learning(
+    project_id: str | None = None,
+    improvement_type: str | None = None,
+    market_type: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    return _build_outcome_service(load_settings()).learning.context(user_id=user_id, project_id=project_id, improvement_type=improvement_type, market_type=market_type)
+
+
+@app.get("/outcomes/{outcome_id}")
+def get_outcome_detail(outcome_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).detail(user_id=user_id, outcome_id=outcome_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.patch("/outcomes/{outcome_id}")
 def update_outcome(
     outcome_id: str,
@@ -1045,6 +1136,50 @@ def update_outcome(
             outcome_id=outcome_id,
             payload=request.model_dump(exclude_unset=True),
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/outcomes/{outcome_id}/measure")
+def measure_outcome(outcome_id: str, request: OutcomeMeasurementRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).record_measurement(
+            user_id=user_id, outcome_id=outcome_id, before_metrics=request.before_metrics, after_metrics=request.after_metrics,
+            measurement_method=request.measurement_method, measurement_source=request.measurement_source,
+            evidence_data=request.evidence_data, thresholds=request.evaluation_thresholds, period=request.measurement_period,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/outcomes/{outcome_id}/transition")
+def transition_outcome(outcome_id: str, request: OutcomeTransitionRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).transition(user_id=user_id, outcome_id=outcome_id, new_status=request.status, reason=request.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/outcomes/{outcome_id}/refresh")
+def refresh_outcome(outcome_id: str, request: OutcomeConnectorRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).refresh_from_connector(user_id=user_id, outcome_id=outcome_id, connector_key=request.connector_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/outcomes/{outcome_id}/learning/rebuild")
+def rebuild_outcome_learning(outcome_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).rebuild_learning(user_id=user_id, outcome_id=outcome_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/outcomes/from-github-pr")
+def create_outcome_from_github_pr(request: OutcomeFromGitHubRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_outcome_service(load_settings()).create_from_github_pr(user_id=user_id, pull_request_id=request.pull_request_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

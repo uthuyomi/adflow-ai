@@ -155,14 +155,8 @@ class RuleBasedAIRouter:
                 self._step("risk_review", "chatgpt_risk_reviewer", "Review is separated from proposal generation."),
             ],
         )
-        if "implementation" in objective.lower() or "diff" in objective.lower():
-            steps.append(
-                self._step(
-                    "implementation_plan",
-                    "codex_implementation",
-                    "Code and diff work is routed to Codex after human review.",
-                ),
-            )
+        # Codex runs only through the audited Codex Task execution pipeline.
+        # Proposal orchestration must finish before human approval and task creation.
         return steps
 
     @staticmethod

@@ -8,6 +8,7 @@ from backend.services.demand.demand_models import DemandConnectorRequest, Demand
 
 class BaseDemandConnector(Protocol):
     connector_key: str
+    connector_type: str
     source_type: str
 
     def is_configured(self, settings: Settings) -> bool:

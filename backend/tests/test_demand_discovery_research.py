@@ -3,13 +3,24 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
+import requests
+
 from backend.core.config import Settings
 from backend.services.demand.connectors.connector_registry import DemandConnectorRegistry
 from backend.services.demand.connectors.firecrawl_connector import FirecrawlDemandConnector
 from backend.services.demand.connectors.firecrawl_search_connector import FirecrawlSearchDemandConnector
 from backend.services.demand.connectors.google_search_connector import GoogleSearchDemandConnector
+from backend.services.demand.connectors.reddit_connector import RedditDemandConnector
+from backend.services.demand.connectors.review_connector import ReviewDemandConnector
+from backend.services.demand.demand_scoring_engine import DemandScoringEngine
+from backend.services.demand.evidence_engine import EvidenceEngine
 from backend.services.demand.connectors.synthetic_connector import SyntheticDemandConnector
-from backend.services.demand.demand_intelligence_service import DemandIntelligenceService, _unique_urls
+from backend.services.demand.connectors.x_connector import XDemandConnector
+from backend.services.demand.demand_intelligence_service import (
+    DemandIntelligenceService,
+    DemandRawSignal as PipelineDemandRawSignal,
+    _unique_urls,
+)
 from backend.services.demand.demand_models import DemandConnectorRequest, DemandConnectorResponse, DemandRawSignal
 from backend.services.demand.search_demand_layer import SearchDemandLayer
 from backend.services.demand.signal_validation_engine import SignalValidationEngine
@@ -24,6 +35,28 @@ from backend.services.product.demand_discovery_service import (
 
 
 class DemandDiscoveryResearchTests(unittest.TestCase):
+    def test_connector_cache_signal_preserves_real_connector_fields(self) -> None:
+        cached = DemandRawSignal(
+            source_type="review_site",
+            source_name="example.com",
+            connector_key="firecrawl_search",
+            external_id="result-1",
+            url="https://example.com/reviews",
+            title="Reviews",
+            body="Reporting takes too long.",
+            collected_at="2026-06-13T00:00:00+00:00",
+            like_count=4,
+            comment_count=2,
+            share_count=1,
+        ).model_dump(mode="json")
+
+        restored = PipelineDemandRawSignal.model_validate(cached)
+
+        self.assertEqual(restored.connector_key, "firecrawl_search")
+        self.assertEqual(restored.external_id, "result-1")
+        self.assertEqual(restored.collected_at, "2026-06-13T00:00:00+00:00")
+        self.assertEqual(restored.like_count, 4)
+
     def test_brief_requires_target_segment(self) -> None:
         brief = _brief_from_text("広告レポートを自動化するアプリを考えています")
         self.assertIn("target_segment", _missing_fields(brief))
@@ -72,8 +105,8 @@ class DemandDiscoveryResearchTests(unittest.TestCase):
         self.assertIn("site:x.com", google_queries)
         self.assertIn("広告レポート 不満", firecrawl_queries)
         self.assertEqual(result["firecrawl"], ["https://example.com/reviews"])
-        self.assertNotIn("reddit", result)
-        self.assertNotIn("x", result)
+        self.assertEqual(result["reddit"], ["広告レポート"])
+        self.assertEqual(result["x"], ["広告レポート"])
 
     def test_source_query_builder_generates_language_specific_queries(self) -> None:
         ja = " ".join(SourceQueryBuilder().build(query="広告レポート", locale="ja")["google_custom_search"])
@@ -87,8 +120,107 @@ class DemandDiscoveryResearchTests(unittest.TestCase):
         connectors = DemandConnectorRegistry(Settings(demand_real_sources_enabled=True)).real_connectors
         self.assertEqual(
             [connector.connector_key for connector in connectors],
-            ["google_custom_search", "firecrawl_search", "firecrawl"],
+            ["google_custom_search", "firecrawl_search", "reddit", "review_search", "x", "web_page", "firecrawl"],
         )
+
+    @patch("backend.services.demand.connectors.reddit_connector.requests.get")
+    def test_reddit_connector_returns_real_post_metadata(self, get: Mock) -> None:
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.json.return_value = {"data": {"children": [{"data": {
+            "id": "post-1", "subreddit": "marketing", "title": "Reporting pain",
+            "selftext": "Manual reporting takes too long.", "score": 42, "num_comments": 8,
+            "created_utc": 1_700_000_000, "permalink": "/r/marketing/comments/post-1/reporting_pain/",
+        }}]}}
+        response = RedditDemandConnector(Settings()).collect(DemandConnectorRequest(query="ad reporting"))
+        self.assertEqual(response.status, "completed")
+        self.assertEqual(response.signals[0].source_type, "reddit")
+        self.assertEqual(response.signals[0].metadata["subreddit"], "marketing")
+        self.assertEqual(response.signals[0].comment_count, 8)
+
+    @patch("backend.services.demand.connectors.reddit_connector.requests.get")
+    @patch("backend.services.demand.connectors.reddit_connector.requests.post")
+    def test_reddit_connector_uses_oauth_when_credentials_exist(self, post: Mock, get: Mock) -> None:
+        post.return_value.raise_for_status.return_value = None
+        post.return_value.json.return_value = {"access_token": "reddit-token"}
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.json.return_value = {"data": {"children": []}}
+
+        response = RedditDemandConnector(
+            Settings(reddit_client_id="client", reddit_client_secret="secret"),
+        ).collect(DemandConnectorRequest(query="ad reporting"))
+
+        self.assertEqual(response.metadata["auth_mode"], "oauth")
+        self.assertTrue(get.call_args.args[0].startswith("https://oauth.reddit.com/"))
+        self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer reddit-token")
+
+    @patch("backend.services.demand.connectors.review_connector.requests.get")
+    def test_review_connector_returns_real_review_source(self, get: Mock) -> None:
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.json.return_value = {"items": [{"cacheId": "review-1", "link": "https://www.g2.com/products/example/reviews", "title": "Example reviews", "snippet": "Setup is difficult."}]}
+        connector = ReviewDemandConnector(Settings(google_custom_search_api_key="key", google_custom_search_engine_id="cx"))
+        response = connector.collect(DemandConnectorRequest(query="ad reporting"))
+        self.assertEqual(response.status, "completed")
+        self.assertEqual(response.signals[0].source_type, "competitor_review")
+
+    @patch("backend.services.demand.connectors.review_connector.FirecrawlSearchDemandConnector.collect")
+    @patch("backend.services.demand.connectors.review_connector.requests.get")
+    def test_review_connector_falls_back_to_firecrawl_search(self, get: Mock, collect: Mock) -> None:
+        get.return_value.raise_for_status.side_effect = requests.HTTPError(response=Mock(status_code=403))
+        collect.return_value = DemandConnectorResponse(
+            source_type="google_search",
+            connector_key="firecrawl_search",
+            status="completed",
+            signals=[
+                DemandRawSignal(
+                    source_type="review_site",
+                    source_name="g2.com",
+                    connector_key="firecrawl_search",
+                    url="https://www.g2.com/products/example/reviews",
+                    title="Example reviews",
+                    body="Setup is difficult.",
+                ),
+            ],
+        )
+        connector = ReviewDemandConnector(
+            Settings(
+                google_custom_search_api_key="key",
+                google_custom_search_engine_id="cx",
+                firecrawl_api_key="firecrawl",
+            ),
+        )
+
+        response = connector.collect(DemandConnectorRequest(query="ad reporting"))
+
+        self.assertEqual(response.status, "completed")
+        self.assertEqual(response.signals[0].connector_key, "review_search")
+        self.assertEqual(response.signals[0].source_type, "competitor_review")
+        self.assertEqual(response.metadata["provider"], "firecrawl_search")
+
+    @patch("backend.services.demand.connectors.x_connector.requests.get")
+    def test_x_connector_uses_request_language_and_excludes_retweets(self, get: Mock) -> None:
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.json.return_value = {"data": []}
+
+        XDemandConnector(Settings(x_api_bearer_token="token")).collect(
+            DemandConnectorRequest(query="AI advertising optimization", language="en"),
+        )
+
+        query = get.call_args.kwargs["params"]["query"]
+        self.assertIn("lang:en", query)
+        self.assertIn("-is:retweet", query)
+        self.assertNotIn("lang:ja", query)
+
+    def test_evidence_and_demand_score_use_real_sources_only(self) -> None:
+        signals = [
+            {"id": "real", "data_source_type": "REAL", "url": "https://g2.com/products/example", "title": "Example reviews", "body": "Ad reporting takes too long", "connector_key": "google_custom_search", "source_type": "review_site", "quality_score": 60},
+            {"id": "synthetic", "data_source_type": "SYNTHETIC", "url": None, "title": "Synthetic", "body": "Generated", "connector_key": "synthetic", "source_type": "synthetic", "quality_score": 100},
+        ]
+        evidence = EvidenceEngine().build(user_id="user", run_id="run", signals=signals, query="ad reporting")
+        competitors = EvidenceEngine().competitors(user_id="user", run_id="run", evidence=evidence)
+        score = DemandScoringEngine().score(user_id="user", run_id="run", project_id=None, ad_lp_pair_id=None, evidence=evidence, competitors=competitors, signals=signals)
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(competitors[0]["category"], "review_platform")
+        self.assertEqual(score["evidence_count"], 1)
 
     @patch("backend.services.demand.connectors.google_search_connector.requests.get")
     def test_google_connector_returns_discovered_urls(self, get: Mock) -> None:
@@ -287,7 +419,7 @@ class DemandDiscoveryResearchTests(unittest.TestCase):
         )
         self.assertEqual([signal.connector_key for signal in signals], ["google_custom_search"])
         self.assertEqual(summary["evidence_status"], "real")
-        self.assertEqual(summary["skipped_count"], 2)
+        self.assertEqual(summary["skipped_count"], 4)
 
     @patch("backend.services.demand.connectors.firecrawl_connector.FirecrawlDemandConnector.collect")
     @patch("backend.services.demand.connectors.firecrawl_search_connector.FirecrawlSearchDemandConnector.collect")

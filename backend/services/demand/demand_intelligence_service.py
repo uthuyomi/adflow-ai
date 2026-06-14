@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from math import sqrt
 from typing import Any, Literal
@@ -13,6 +13,8 @@ from backend.core.config import Settings, load_settings
 from backend.services.demand.connectors.connector_registry import DemandConnectorRegistry
 from backend.services.demand.demand_models import DemandConnectorRequest
 from backend.services.demand.demand_monitoring_engine import DemandMonitoringEngine
+from backend.services.demand.demand_scoring_engine import DemandScoringEngine
+from backend.services.demand.evidence_engine import EvidenceEngine
 from backend.services.demand.market_size_layer import MarketSizeLayer
 from backend.services.demand.outcome_feedback_learning import OutcomeFeedbackLearning
 from backend.services.demand.search_demand_layer import SearchDemandLayer
@@ -94,11 +96,17 @@ class DemandRawSignal(BaseModel):
 
     source_type: SourceType
     source_name: str
+    connector_key: str = "synthetic"
+    external_id: str | None = None
     url: str | None = None
     title: str
     body: str
     posted_at: str | None = None
+    collected_at: str | None = None
     engagement: dict[str, int] = Field(default_factory=dict)
+    like_count: int = 0
+    comment_count: int = 0
+    share_count: int = 0
     language: str = "ja"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -243,6 +251,10 @@ class DemandIntelligenceSummary(BaseModel):
     search_demand_summary: dict[str, Any] = Field(default_factory=dict)
     market_size_summary: dict[str, Any] = Field(default_factory=dict)
     outcome_learning_summary: dict[str, Any] = Field(default_factory=dict)
+    real_evidence_summary: dict[str, Any] = Field(default_factory=dict)
+    demand_score_summary: dict[str, Any] = Field(default_factory=dict)
+    competitor_discovery_summary: dict[str, Any] = Field(default_factory=dict)
+    learning_context: dict[str, Any] = Field(default_factory=dict)
     pair_analysis_context: dict[str, Any]
 
 
@@ -258,6 +270,8 @@ class DemandIntelligenceService:
         self.search_demand_layer = SearchDemandLayer()
         self.market_size_layer = MarketSizeLayer()
         self.outcome_learning = OutcomeFeedbackLearning()
+        self.evidence_engine = EvidenceEngine()
+        self.demand_scoring_engine = DemandScoringEngine()
 
     def run(
         self,
@@ -279,6 +293,16 @@ class DemandIntelligenceService:
     ) -> dict[str, Any]:
         if not query.strip():
             raise ValueError("query is required.")
+        if research_fingerprint:
+            existing = self.repository.get_many(
+                "demand_intelligence_runs",
+                user_id=user_id,
+                filters={"research_fingerprint": research_fingerprint},
+                order="created_at.desc",
+                limit=1,
+            )
+            if existing and existing[0].get("status") == "completed":
+                return {**self._hydrate(existing[0]), "_reused": True}
         if mode == "pair_analysis":
             if not ad_lp_pair_id:
                 raise ValueError("ad_lp_pair_id is required for pair_analysis.")
@@ -383,6 +407,31 @@ class DemandIntelligenceService:
                     },
                 )
                 inserted_signals.append(inserted)
+            evidence_payloads = self.evidence_engine.build(
+                user_id=user_id, run_id=run["id"], signals=inserted_signals, query=query,
+            )
+            if not evidence_payloads:
+                raise ValueError("No real evidence with a source URL was collected; an evidence-backed report cannot be generated.")
+            evidence_rows = self.repository.insert_demand_evidence(evidence_payloads)
+            competitor_payloads = self.evidence_engine.competitors(
+                user_id=user_id, run_id=run["id"], evidence=evidence_rows,
+            )
+            competitor_rows = self.repository.insert_demand_competitors(competitor_payloads)
+            demand_score = self.demand_scoring_engine.score(
+                user_id=user_id, run_id=run["id"], project_id=project_id, ad_lp_pair_id=ad_lp_pair_id,
+                evidence=evidence_rows, competitors=competitor_rows, signals=inserted_signals,
+            )
+            demand_score_row = self.repository.insert("demand_scores", demand_score)
+            learning_context = self.repository.insert("demand_learning_contexts", {
+                "user_id": user_id, "run_id": run["id"], "project_id": project_id,
+                "market_type": scope_type or "general",
+                "signal_quality": round(sum(float(row.get("relevance_score") or 0) for row in evidence_rows) / max(1, len(evidence_rows)), 2),
+                "competitor_density": demand_score["competitor_density"],
+                "trend_strength": demand_score["trend_strength"],
+                "evidence_count": len(evidence_rows),
+                "discovery_score": demand_score["score"],
+                "metadata": {"connector_count": demand_score["real_source_count"], "ad_lp_pair_id": ad_lp_pair_id},
+            })
             for index, vector in enumerate(embeddings):
                 self.repository.insert(
                     "demand_intelligence_embeddings",
@@ -672,6 +721,17 @@ class DemandIntelligenceService:
                 search_demand_summary=search_demand_summary,
                 market_size_summary=market_size_summary,
                 outcome_learning_summary=outcome_learning_summary,
+                real_evidence_summary={
+                    "count": len(evidence_rows),
+                    "connector_counts": _count_by(evidence_rows, "connector"),
+                    "sources": [
+                        {"title": row["title"], "source_url": row["source_url"], "connector": row["connector"], "quote": row["quote"], "relevance_score": row["relevance_score"]}
+                        for row in evidence_rows[:20]
+                    ],
+                },
+                demand_score_summary=demand_score_row,
+                competitor_discovery_summary={"count": len(competitor_rows), "competitors": competitor_rows[:20]},
+                learning_context=learning_context,
                 locale=locale,
             )
 
@@ -689,6 +749,10 @@ class DemandIntelligenceService:
                     "search_demand_summary": search_demand_summary,
                     "market_size_summary": market_size_summary,
                     "outcome_learning_summary": outcome_learning_summary,
+                    "evidence_summary": summary.real_evidence_summary,
+                    "demand_score_summary": demand_score_row,
+                    "competitor_summary": summary.competitor_discovery_summary,
+                    "learning_context": learning_context,
                 },
             )
             return self._hydrate(run)
@@ -873,6 +937,9 @@ class DemandIntelligenceService:
             )
 
         def execute_connector(connector: Any, connector_queries: list[str]) -> list[DemandRawSignal]:
+            cache_fingerprint = sha256(
+                f"{connector.connector_key}|{query}|{'|'.join(connector_queries)}|{locale}".encode("utf-8"),
+            ).hexdigest()
             source_run = self.repository.create_demand_source_run(
                 {
                     "user_id": user_id,
@@ -886,6 +953,31 @@ class DemandIntelligenceService:
                 },
             )
             try:
+                cached = (
+                    self.repository.get_many(
+                        "demand_connector_cache",
+                        user_id=user_id,
+                        filters={"connector_key": connector.connector_key, "fingerprint": cache_fingerprint},
+                        order="expires_at.desc",
+                        limit=1,
+                    )
+                    if hasattr(self.repository, "get_many")
+                    else []
+                )
+                if cached and _is_future(cached[0].get("expires_at")):
+                    cached_signals = [DemandRawSignal.model_validate(item) for item in cached[0].get("signals") or []]
+                    source_results.append(
+                        self.repository.update_demand_source_run(
+                            user_id=user_id,
+                            source_run_id=source_run["id"],
+                            payload={
+                                "status": "completed", "collected_count": len(cached_signals), "stored_count": len(cached_signals),
+                                "completed_at": datetime.now(timezone.utc).isoformat(),
+                                "metadata": {"connector_key": connector.connector_key, "cache_hit": True},
+                            },
+                        ),
+                    )
+                    return cached_signals
                 response = connector.collect(
                     DemandConnectorRequest(
                         query=query,
@@ -900,7 +992,7 @@ class DemandIntelligenceService:
                         metadata={"pair_name": pair.get("name"), "pair": pair, "product_idea": product_idea},
                     ),
                 )
-                status = response.status if response.status in {"completed", "partial", "failed", "skipped"} else "partial"
+                status = response.status if response.status in {"completed", "partial", "failed", "skipped", "unavailable"} else "partial"
                 source_results.append(
                     self.repository.update_demand_source_run(
                         user_id=user_id,
@@ -927,6 +1019,19 @@ class DemandIntelligenceService:
                             "metadata": response.metadata,
                         },
                     )
+                if response.signals and status in {"completed", "partial"} and hasattr(self.repository, "insert"):
+                    expires_at = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
+                    if cached:
+                        self.repository.update(
+                            "demand_connector_cache", user_id=user_id, filters={"id": cached[0]["id"]},
+                            payload={"signals": [item.model_dump(mode="json") for item in response.signals], "expires_at": expires_at},
+                        )
+                    else:
+                        self.repository.insert("demand_connector_cache", {
+                            "user_id": user_id, "connector_key": connector.connector_key, "fingerprint": cache_fingerprint,
+                            "query": query, "request_payload": {"queries": connector_queries, "locale": locale},
+                            "signals": [item.model_dump(mode="json") for item in response.signals], "expires_at": expires_at,
+                        })
                 return response.signals
             except Exception as exc:
                 source_results.append(
@@ -981,6 +1086,20 @@ class DemandIntelligenceService:
                 if signal.url
             ]
             firecrawl_urls = _unique_urls([*expanded["firecrawl"], *discovered_urls])
+            for connector, key in (
+                (self.connector_registry.reddit, "reddit"),
+                (self.connector_registry.review, "review_search"),
+                (self.connector_registry.x, "x"),
+                (self.connector_registry.web_page, "web_page"),
+            ):
+                if connector.is_configured(self.settings):
+                    connector_queries = expanded[key]
+                    if key != "web_page" or connector_queries:
+                        all_signals.extend(execute_connector(connector, connector_queries))
+                    else:
+                        record_skipped(connector, "no_urls")
+                else:
+                    record_skipped(connector, "missing_api_key")
             if firecrawl.is_configured(self.settings):
                 if firecrawl_urls:
                     all_signals.extend(execute_connector(firecrawl, firecrawl_urls))
@@ -1000,6 +1119,7 @@ class DemandIntelligenceService:
             "partial_count": sum(1 for item in source_results if item.get("status") == "partial"),
             "failed_count": sum(1 for item in source_results if item.get("status") == "failed"),
             "skipped_count": sum(1 for item in source_results if item.get("status") == "skipped"),
+            "unavailable_count": sum(1 for item in source_results if item.get("status") == "unavailable"),
             "collected_count": len(all_signals),
             "real_signal_count": sum(1 for item in all_signals if item.connector_key != "synthetic"),
             "synthetic_signal_count": sum(1 for item in all_signals if item.connector_key == "synthetic"),
@@ -1013,7 +1133,16 @@ class DemandIntelligenceService:
             if summary["synthetic_signal_count"]
             else "insufficient"
         )
-        return all_signals[: self.settings.demand_max_signals_per_run], summary
+        deduplicated: list[DemandRawSignal] = []
+        seen: set[tuple[str, str]] = set()
+        for signal in all_signals:
+            key = (signal.url or "", (signal.body or signal.title).strip().lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            deduplicated.append(signal)
+        summary["collected_count"] = len(deduplicated)
+        return deduplicated[: self.settings.demand_max_signals_per_run], summary
 
     def _normalize_signals(self, raw_signals: list[DemandRawSignal]) -> list[DemandNormalizedSignal]:
         seen: set[str] = set()
@@ -1491,6 +1620,10 @@ class DemandIntelligenceService:
         search_demand_summary: dict[str, Any] | None = None,
         market_size_summary: dict[str, Any] | None = None,
         outcome_learning_summary: dict[str, Any] | None = None,
+        real_evidence_summary: dict[str, Any] | None = None,
+        demand_score_summary: dict[str, Any] | None = None,
+        competitor_discovery_summary: dict[str, Any] | None = None,
+        learning_context: dict[str, Any] | None = None,
         locale: str = "ja",
     ) -> DemandIntelligenceSummary:
         source_status_summary = source_status_summary or {}
@@ -1500,6 +1633,10 @@ class DemandIntelligenceService:
         search_demand_summary = search_demand_summary or {}
         market_size_summary = market_size_summary or {}
         outcome_learning_summary = outcome_learning_summary or {}
+        real_evidence_summary = real_evidence_summary or {}
+        demand_score_summary = demand_score_summary or {}
+        competitor_discovery_summary = competitor_discovery_summary or {}
+        learning_context = learning_context or {}
         pain_clusters = [cluster for cluster in clusters if cluster.cluster_type == "pain"]
         desire_clusters = [cluster for cluster in clusters if cluster.cluster_type == "desire"]
         evidence = [
@@ -1546,6 +1683,10 @@ class DemandIntelligenceService:
             search_demand_summary=search_demand_summary,
             market_size_summary=market_size_summary,
             outcome_learning_summary=outcome_learning_summary,
+            real_evidence_summary=real_evidence_summary,
+            demand_score_summary=demand_score_summary,
+            competitor_discovery_summary=competitor_discovery_summary,
+            learning_context=learning_context,
             pair_analysis_context={
                 "market_insights": [
                     {
@@ -1606,6 +1747,10 @@ class DemandIntelligenceService:
                 "search_demand_summary": search_demand_summary,
                 "market_size_summary": market_size_summary,
                 "outcome_learning_summary": outcome_learning_summary,
+                "real_evidence_summary": real_evidence_summary,
+                "demand_score_summary": demand_score_summary,
+                "competitor_discovery_summary": competitor_discovery_summary,
+                "learning_context": learning_context,
                 "strong_validated_clusters": validation_summary.get("strong_validated_clusters", []),
                 "weak_or_noisy_clusters": validation_summary.get("weak_or_noisy_clusters", []),
                 "matched_solution_pains": solution_fit_summary.get("matched_solution_pains", []),
@@ -1686,7 +1831,24 @@ def _looks_uuid(value: Any) -> bool:
 
 
 def _data_source_type(connector_key: Any) -> str:
-    return "REAL" if str(connector_key) in {"google_custom_search", "firecrawl_search", "firecrawl", "x", "web_page"} else "SYNTHETIC"
+    return "REAL" if str(connector_key) in {"google_custom_search", "firecrawl_search", "firecrawl", "reddit", "review_search", "x", "web_page"} else "SYNTHETIC"
+
+
+def _count_by(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row.get(key) or "unknown")
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _is_future(value: Any) -> bool:
+    if not value:
+        return False
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")) > datetime.now(timezone.utc)
+    except ValueError:
+        return False
 
 
 def _unique_urls(urls: list[str]) -> list[str]:

@@ -199,6 +199,7 @@ export function useRunDemandIntelligence(pairId: string) {
           ad_lp_pair_id: pairId,
           query,
           locale,
+          idempotency_key: `${pairId}:${query.trim().toLowerCase()}`.slice(0, 200),
         }),
       }),
     onSuccess: () => {

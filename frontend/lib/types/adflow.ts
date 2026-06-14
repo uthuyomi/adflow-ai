@@ -461,9 +461,13 @@ export type DemandIntelligenceSummary = {
   monitoring_summary: DemandMonitoringSummary | JsonRecord;
   search_demand_summary: DemandSearchDemandSummary | JsonRecord;
   market_size_summary: DemandMarketSizeSummary | JsonRecord;
-  outcome_learning_summary: DemandOutcomeLearningSummary | JsonRecord;
-  pair_analysis_context: JsonRecord;
-};
+    outcome_learning_summary: DemandOutcomeLearningSummary | JsonRecord;
+    real_evidence_summary: JsonRecord;
+    demand_score_summary: JsonRecord;
+    competitor_discovery_summary: JsonRecord;
+    learning_context: JsonRecord;
+    pair_analysis_context: JsonRecord;
+  };
 
 export type DemandIntelligenceSignal = {
   id: UUID;
@@ -738,13 +742,14 @@ export type DemandIntelligenceRun = {
 };
 
 export type ImprovementOutcomeStatus =
-  | "pending"
-  | "implemented"
-  | "measured"
-  | "positive"
-  | "neutral"
-  | "negative"
-  | "inconclusive";
+  | "DRAFT"
+  | "PENDING_MEASUREMENT"
+  | "MEASURING"
+  | "SUCCESS"
+  | "PARTIAL_SUCCESS"
+  | "NO_IMPACT"
+  | "FAILED"
+  | "ARCHIVED";
 
 export type ImprovementOutcome = {
   id: UUID;
@@ -753,8 +758,10 @@ export type ImprovementOutcome = {
   ad_lp_pair_id: UUID;
   source_ai_result_id: UUID | null;
   source_codex_task_id: UUID | null;
+  source_github_pr_id: UUID | null;
   title: string;
   description: string | null;
+  summary: string | null;
   implemented_at: string | null;
   measured_at: string | null;
   before_metrics: JsonRecord;
@@ -763,8 +770,43 @@ export type ImprovementOutcome = {
   outcome_status: ImprovementOutcomeStatus;
   outcome_summary: string | null;
   learning_notes: string | null;
+  expected_impact: JsonRecord;
+  measurement_plan: JsonRecord;
+  measurement_period: JsonRecord;
+  measurement_method: string | null;
+  measurement_source: string;
+  evidence_data: JsonRecord[];
+  evaluation_thresholds: JsonRecord;
+  improvement_rate: number | null;
+  evaluation_result: JsonRecord;
+  created_by: UUID;
+  updated_by: UUID | null;
+  status_updated_at: string;
   created_at: string;
   updated_at: string;
+};
+
+export type OutcomeLearningData = {
+  id: UUID; outcome_id: UUID; project_id: UUID | null; improvement_id: UUID | null; improvement_type: string;
+  project_type: string | null; market_type: string | null; before_metrics: JsonRecord; after_metrics: JsonRecord;
+  improvement_rate: number; success_flag: boolean; confidence_score: number; measurement_quality: number;
+  outcome_status: ImprovementOutcomeStatus; learning_score: number; created_at: string; updated_at: string;
+};
+
+export type OutcomeDetail = {
+  outcome: ImprovementOutcome;
+  improvement: AIAgentResult | null;
+  codex_task: CodexTaskPrompt | null;
+  github_pr: { id: UUID; pr_url: string | null; pr_number: number | null; status: string; repository: string } | null;
+  project: AdProject | null;
+  history: Array<{ id: UUID; old_status: ImprovementOutcomeStatus | null; new_status: ImprovementOutcomeStatus; changed_by: UUID; changed_at: string; reason: string | null; measurement_source: string | null }>;
+  learning: OutcomeLearningData[];
+};
+
+export type OutcomeStats = {
+  total: number; counts: Record<ImprovementOutcomeStatus, number>; success_rate: number; failure_rate: number;
+  average_improvement_rate: number; average_ctr_improvement: number; average_cvr_improvement: number;
+  learning: { learning_count: number; success_count: number; failure_count: number; success_rate: number; average_improvement_rate: number; by_market: JsonRecord[]; by_improvement: JsonRecord[]; by_project: JsonRecord[] };
 };
 
 export type EntityName =

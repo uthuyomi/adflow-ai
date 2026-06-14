@@ -12,6 +12,7 @@ from backend.services.demand.demand_models import DemandConnectorRequest, Demand
 
 class FirecrawlDemandConnector:
     connector_key = "firecrawl"
+    connector_type = "competitor"
     source_type = "competitor_lp"
 
     def __init__(self, settings: Settings) -> None:

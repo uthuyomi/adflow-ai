@@ -67,8 +67,9 @@ class OutcomeFeedbackLearning:
     @staticmethod
     def _learning_status(outcome: dict[str, Any], metric_delta: dict[str, Any]) -> str:
         explicit = outcome.get("outcome_status")
-        if explicit in {"positive", "neutral", "negative", "inconclusive"}:
-            return str(explicit)
+        mapped = {"SUCCESS": "positive", "PARTIAL_SUCCESS": "positive", "NO_IMPACT": "neutral", "FAILED": "negative"}
+        if explicit in mapped:
+            return mapped[str(explicit)]
         ctr = float(metric_delta.get("ctr_delta_rate") or metric_delta.get("ctr_delta") or 0)
         cvr = float(metric_delta.get("cvr_delta_rate") or metric_delta.get("cvr_delta") or 0)
         bounce = float(metric_delta.get("bounce_rate_delta") or 0)

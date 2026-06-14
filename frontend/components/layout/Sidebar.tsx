@@ -27,6 +27,7 @@ const navItems = [
   { href: "/ad-optimization", labelKey: "nav.adOptimization", icon: Target },
   { href: "/demand-discovery", labelKey: "nav.demandDiscovery", icon: Lightbulb },
   { href: "/results", labelKey: "nav.results", icon: LineChart },
+  { href: "/outcomes", labelKey: "nav.outcomes", icon: LineChart },
   { href: "/codex-tasks", labelKey: "nav.codexTasks", icon: TerminalSquare },
   { href: "/settings", labelKey: "nav.settings", icon: Settings },
 ];

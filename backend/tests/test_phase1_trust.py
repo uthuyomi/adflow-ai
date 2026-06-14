@@ -7,7 +7,7 @@ from backend.services.ai.provider_registry import AIProviderRegistry
 from backend.core.config import Settings
 from backend.services.demand.outcome_feedback_learning import OutcomeFeedbackLearning
 from backend.services.demand.demand_intelligence_service import _data_source_type
-from backend.services.orchestration.ai_orchestrator import AIOrchestrator
+from backend.services.orchestration.ai_orchestrator import AIOrchestrator, RuleBasedAIRouter
 
 
 class FakeRepository:
@@ -79,6 +79,13 @@ class Phase1TrustTests(unittest.TestCase):
         provider = AIProviderRegistry(Settings()).get("codex")
         with self.assertRaisesRegex(ValueError, "MockProvider is not allowed"):
             provider.generate_structured(system_prompt="test", user_payload={}, schema={})
+
+    def test_codex_is_not_executed_during_proposal_orchestration(self) -> None:
+        route = RuleBasedAIRouter().route(
+            platform="twitter",
+            objective="pair_analysis_with_review_and_diff_readiness",
+        )
+        self.assertFalse(any(step.provider == "codex" for step in route))
 
 
 if __name__ == "__main__":

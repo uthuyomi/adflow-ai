@@ -8,6 +8,7 @@ from backend.services.demand.demand_models import DemandConnectorRequest, Demand
 
 class SyntheticDemandConnector:
     connector_key = "synthetic"
+    connector_type = "synthetic"
     source_type = "synthetic"
 
     def is_configured(self, settings: Settings) -> bool:

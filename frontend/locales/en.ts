@@ -1,8 +1,8 @@
 ﻿export const en = {
   "meta.default.title": "AdFlow AI",
   "meta.default.description": "Discover demand signals and improve campaigns with AI.",
-  "meta.home.title": "AdFlow AI",
-  "meta.home.description": "Discover demand signals and improve campaigns with AI.",
+  "meta.home.title": "AdFlow AI | Build Decision Platform",
+  "meta.home.description": "Turn market evidence into a build decision, positioning, and recommended next actions before spending months building.",
   "meta.features.title": "AdFlow AI Features",
   "meta.features.description": "Discover demand signals and improve campaigns with AI.",
   "meta.pricing.title": "AdFlow AI Pricing",
@@ -43,6 +43,7 @@
   "nav.adOptimization": "Ad Optimization",
   "nav.demandDiscovery": "Demand Discovery",
   "nav.results": "Results",
+  "nav.outcomes": "Outcomes",
   "nav.projects": "Projects",
   "nav.ads": "X Ads",
   "nav.lps": "Landing Pages",

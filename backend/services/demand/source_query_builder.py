@@ -79,6 +79,10 @@ class SourceQueryBuilder:
         return {
             "google_custom_search": [query, *auxiliary, *expanded],
             "firecrawl_search": firecrawl_search_queries,
+            "reddit": [query],
+            "review_search": [query],
+            "x": [query],
+            "web_page": list(dict.fromkeys(urls)),
             "firecrawl": list(dict.fromkeys(urls)),
             "synthetic": expanded,
         }

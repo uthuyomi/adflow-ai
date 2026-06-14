@@ -10,6 +10,7 @@ from backend.services.demand.demand_models import DemandConnectorRequest, Demand
 
 class GoogleSearchDemandConnector:
     connector_key = "google_custom_search"
+    connector_type = "search"
     source_type = "google_search"
 
     def __init__(self, settings: Settings) -> None:
@@ -62,6 +63,13 @@ class GoogleSearchDemandConnector:
                     )
                     if len(signals) >= request.max_results:
                         break
+            except requests.HTTPError as exc:
+                errors.append(f"{query}: {exc}")
+                if exc.response is not None and exc.response.status_code in {401, 403, 429}:
+                    return DemandConnectorResponse(
+                        source_type=self.source_type, connector_key=self.connector_key, status="unavailable",
+                        error_message="; ".join(errors), metadata={"reason": f"http_{exc.response.status_code}"},
+                    )
             except Exception as exc:
                 errors.append(f"{query}: {exc}")
             if len(signals) >= request.max_results:
