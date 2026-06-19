@@ -1,5 +1,8 @@
 # Phase3 Audit Report
 
+> **時点監査資料:** この文書の「現状問題一覧」は当該Phase開始時点の記録です。現在の状態は [`adflow-ai-current-state.md`](adflow-ai-current-state.md) と [`phase8-audit-report.md`](phase8-audit-report.md) を参照してください。
+
+
 実施日: 2026-06-12
 
 ## 現状問題一覧

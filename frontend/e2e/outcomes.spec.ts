@@ -43,13 +43,13 @@ test.afterAll(async ({ request }) => {
   });
 });
 
-test("outcomes and codex tasks redirect unauthenticated users", async ({ browser }) => {
+test("protected workflow pages redirect unauthenticated users", async ({ browser }) => {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto("/outcomes");
-  await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 });
-  await page.goto("/codex-tasks");
-  await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 });
+  for (const path of ["/outcomes", "/codex-tasks", "/experiments", "/operations"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/login$/, { timeout: 20_000 });
+  }
   await context.close();
 });
 

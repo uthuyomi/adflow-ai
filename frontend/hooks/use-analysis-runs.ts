@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getApiBaseUrl } from "@/lib/api/client";
+import { apiErrorFromResponse } from "@/lib/api/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { listAnalysisRuns } from "@/lib/supabase/adflow-repository";
 import type { AnalysisRun } from "@/lib/types/adflow";
@@ -34,7 +35,7 @@ export function useRunPairAnalysis(pairId: string) {
         },
         body: JSON.stringify({ ai_mode: selectedMode, locale }),
       });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) throw await apiErrorFromResponse(response);
       return response.json();
     },
     onSuccess: () => {

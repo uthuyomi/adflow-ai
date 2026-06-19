@@ -1,6 +1,7 @@
 "use client";
 
 import { getApiBaseUrl } from "@/lib/api/client";
+import { apiErrorFromResponse } from "@/lib/api/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Locale } from "@/lib/i18n";
 
@@ -18,7 +19,7 @@ async function requestWithAuth<T>(path: string, init?: RequestInit): Promise<T> 
       ...init?.headers,
     },
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
@@ -81,6 +82,10 @@ export type DemandDiscoveryMessage = {
 export type DemandDiscoverySession = {
   id: string;
   title: string;
+  query: string;
+  project_id: string | null;
+  status: "active" | "archived" | "deleted";
+  is_favorite: boolean;
   messages: DemandDiscoveryMessage[];
   insight: DemandDiscoveryInsight | null;
   latest_demand_run_id?: string | null;
@@ -129,8 +134,8 @@ export type AdABTest = {
   project_id: string;
   name: string;
   hypothesis: string | null;
-  primary_metric: "ctr" | "cvr" | "cpc";
-  status: "draft" | "running" | "completed" | "archived";
+  primary_metric: "ctr" | "cvr" | "cpc" | "cpa" | "conversion" | "revenue" | "roas" | "bounce_rate" | "cta_click_rate" | "form_submit_rate";
+  status: "DRAFT" | "READY" | "RUNNING" | "PAUSED" | "COMPLETED" | "FAILED" | "ARCHIVED";
   variants: AdABTestVariant[];
   provisional_winner: AdABTestVariant | null;
   note: string;
@@ -306,12 +311,26 @@ export async function analyzeDemandDiscovery(input: string, locale: Locale = "ja
   );
 }
 
-export async function createDemandDiscoverySession(input: string, locale: Locale = "ja", signal?: AbortSignal) {
+export async function createDemandDiscoverySession(input: string, locale: Locale = "ja", signal?: AbortSignal, projectId?: string | null) {
   return requestWithAuth<DemandDiscoverySession>("/demand-discovery/sessions", {
     method: "POST",
-    body: JSON.stringify({ input, locale }),
+    body: JSON.stringify({ input, locale, project_id: projectId ?? null }),
     signal,
   });
+}
+
+export async function listDemandDiscoverySessions(params: { q?: string; status?: string; favorite?: boolean; project_id?: string } = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => { if (value !== undefined) query.set(key, String(value)); });
+  return requestWithAuth<DemandDiscoverySession[]>(`/demand-discovery/sessions${query.size ? `?${query}` : ""}`);
+}
+
+export async function getDemandDiscoverySession(sessionId: string) {
+  return requestWithAuth<DemandDiscoverySession>(`/demand-discovery/sessions/${sessionId}`);
+}
+
+export async function updateDemandDiscoverySession(sessionId: string, payload: Partial<Pick<DemandDiscoverySession, "title" | "project_id" | "status" | "is_favorite">>) {
+  return requestWithAuth<DemandDiscoverySession>(`/demand-discovery/sessions/${sessionId}`, { method: "PATCH", body: JSON.stringify(payload) });
 }
 
 export async function sendDemandDiscoveryMessage(sessionId: string, input: string, locale: Locale = "ja", signal?: AbortSignal) {

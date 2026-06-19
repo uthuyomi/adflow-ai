@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionBarPrimitive,
   AssistantRuntimeProvider,
@@ -12,20 +12,28 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
-import { Bot, Copy, ExternalLink, HelpCircle, Loader2, PanelRight, Plus, RefreshCw, Search, Send, Sparkles, Square, UserRound, X } from "lucide-react";
+import { Bot, Copy, ExternalLink, HelpCircle, Loader2, PanelLeft, PanelRight, Plus, RefreshCw, Search, Send, Sparkles, Square, Star, Trash2, UserRound, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useI18n } from "@/hooks/use-i18n";
+import { useProjects } from "@/hooks/use-projects";
 import {
   createDemandDiscoverySession,
+  getDemandDiscoverySession,
+  listDemandDiscoverySessions,
   runDemandDiscoveryResearch,
   sendDemandDiscoveryMessage,
+  updateDemandDiscoverySession,
+  type DemandDiscoverySession,
   type DemandDiscoveryInsight,
   type DemandDiscoveryMessage,
   type DemandResearchContext,
   type DemandResearchStatus,
 } from "@/lib/api/product";
 import { cn } from "@/lib/utils";
+import { useUiStore } from "@/lib/store";
+import { showActionableError } from "@/lib/api/errors";
 
 type ChatMessage = DemandDiscoveryMessage & {
   id: string;
@@ -39,6 +47,8 @@ const starterPromptKeys = [
 
 export default function DemandDiscoveryPage() {
   const { locale, t } = useI18n();
+  const selectedProject = useUiStore((state) => state.selectedProject);
+  const projects = useProjects();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [insight, setInsight] = useState<DemandDiscoveryInsight | null>(null);
@@ -48,7 +58,18 @@ export default function DemandDiscoveryPage() {
   const [error, setError] = useState<string | null>(null);
   const [showHints, setShowHints] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [showSessions, setShowSessions] = useState(false);
+  const [sessionQuery, setSessionQuery] = useState("");
+  const [sessions, setSessions] = useState<DemandDiscoverySession[]>([]);
   const abortRef = useRef<AbortController | null>(null);
+  const refreshSessions = useCallback(async () => setSessions(await listDemandDiscoverySessions({ q: sessionQuery, status: "active" })), [sessionQuery]);
+  useEffect(() => { void refreshSessions(); }, [refreshSessions]);
+
+  const openSession = useCallback(async (id: string) => {
+    const result = await getDemandDiscoverySession(id);
+    setSessionId(result.id); setInsight(result.insight); setResearchStatus(result.research_status); setResearchContext(result.research_context);
+    setMessages(result.messages.map((message, index) => ({ ...message, id: `${result.id}-${index}` }))); setShowSessions(false);
+  }, []);
 
   const sendText = useCallback(
     async (input: string) => {
@@ -72,7 +93,7 @@ export default function DemandDiscoveryPage() {
       try {
         const result = sessionId
           ? await sendDemandDiscoveryMessage(sessionId, trimmed, locale, controller.signal)
-          : await createDemandDiscoverySession(trimmed, locale, controller.signal);
+          : await createDemandDiscoverySession(trimmed, locale, controller.signal, projects.data?.find((item) => item.name === selectedProject)?.id);
 
         setSessionId(result.id);
         setInsight(result.insight);
@@ -84,15 +105,17 @@ export default function DemandDiscoveryPage() {
             id: `${result.id}-${index}`,
           })),
         );
+        void refreshSessions();
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === "AbortError") return;
+        showActionableError(caught, t("demandDiscovery.error"), t("pricing.choosePlan"));
         setError(caught instanceof Error ? caught.message : t("demandDiscovery.error"));
       } finally {
         abortRef.current = null;
         setIsRunning(false);
       }
     },
-    [isRunning, locale, sessionId, t],
+    [isRunning, locale, projects.data, refreshSessions, selectedProject, sessionId, t],
   );
 
   const onNew = useCallback(
@@ -190,6 +213,7 @@ export default function DemandDiscoveryPage() {
             <Plus className="mr-2 h-4 w-4" />
             {t("demandDiscovery.newChat")}
           </Button>
+          <Button onClick={() => setShowSessions((current) => !current)} size="icon" variant="ghost" aria-label="Session history"><PanelLeft className="h-4 w-4" /></Button>
           <Button onClick={() => setShowInsights((current) => !current)} size="icon" variant="ghost" aria-label={t("demandDiscovery.insightPanel")}>
             <PanelRight className="h-4 w-4" />
           </Button>
@@ -211,6 +235,14 @@ export default function DemandDiscoveryPage() {
       </AssistantRuntimeProvider>
 
       {showInsights ? <InsightDrawer insight={insight} onClose={() => setShowInsights(false)} /> : null}
+      {showSessions ? <div className="fixed inset-y-0 left-0 z-40 flex w-full max-w-sm flex-col border-r bg-background shadow-2xl lg:left-72">
+        <div className="flex h-14 items-center justify-between border-b px-4"><strong>Discovery sessions</strong><Button size="icon" variant="ghost" onClick={() => setShowSessions(false)}><X className="h-4 w-4" /></Button></div>
+        <div className="p-3"><Input placeholder="Search sessions" value={sessionQuery} onChange={(event) => setSessionQuery(event.target.value)} /></div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-auto p-3">{sessions.map((session) => <div className="rounded-lg border p-3" key={session.id}>
+          <button className="w-full text-left" onClick={() => void openSession(session.id)} type="button"><div className="text-sm font-medium">{session.title}</div><div className="mt-1 truncate text-xs text-muted-foreground">{session.query}</div></button>
+          <div className="mt-2 flex gap-1"><Button size="icon" variant="ghost" onClick={() => void updateDemandDiscoverySession(session.id, { is_favorite: !session.is_favorite }).then(refreshSessions)}><Star className={`h-4 w-4 ${session.is_favorite ? "fill-current text-amber-500" : ""}`} /></Button><Button size="icon" variant="ghost" onClick={() => void updateDemandDiscoverySession(session.id, { status: "deleted" }).then(refreshSessions)}><Trash2 className="h-4 w-4" /></Button></div>
+        </div>)}</div>
+      </div> : null}
     </div>
   );
 }

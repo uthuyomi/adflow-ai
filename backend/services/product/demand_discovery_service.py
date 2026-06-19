@@ -50,23 +50,44 @@ class DemandDiscoveryService:
         self.llm_client = llm_client
         self.demand_intelligence_service = demand_intelligence_service
 
-    def list_sessions(self, *, user_id: str) -> list[dict[str, Any]]:
-        return [
+    def list_sessions(
+        self,
+        *,
+        user_id: str,
+        project_id: str | None = None,
+        status: str | None = None,
+        favorite: bool | None = None,
+        query: str | None = None,
+    ) -> list[dict[str, Any]]:
+        filters: dict[str, Any] = {}
+        if project_id:
+            filters["project_id"] = project_id
+        if status:
+            filters["status"] = status
+        rows = [
             self._serialize(row)
             for row in self.repository.get_many(
                 "demand_discovery_sessions",
                 user_id=user_id,
+                filters=filters,
                 order="updated_at.desc",
-                limit=50,
+                limit=100,
             )
         ]
+        if favorite is not None:
+            rows = [row for row in rows if row["is_favorite"] is favorite]
+        if query:
+            normalized = query.casefold()
+            rows = [row for row in rows if normalized in row["title"].casefold() or normalized in row["query"].casefold()]
+        return rows
 
-    def create_session(self, *, user_id: str, input_text: str, locale: str = "ja") -> dict[str, Any]:
+    def create_session(self, *, user_id: str, input_text: str, locale: str = "ja", project_id: str | None = None) -> dict[str, Any]:
         result = self.analyze(input_text=input_text, messages=[], locale=locale)
         session = self.repository.insert(
             "demand_discovery_sessions",
             {
                 "user_id": user_id,
+                "project_id": project_id,
                 "title": _title(input_text),
                 "last_input": input_text,
                 "last_assistant_response": result["assistant_message"],
@@ -80,6 +101,30 @@ class DemandDiscoveryService:
             },
         )
         return self._serialize(session)
+
+    def update_session(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        title: str | None = None,
+        project_id: str | None = None,
+        status: str | None = None,
+        is_favorite: bool | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if title is not None:
+            payload["title"] = title.strip()
+        if project_id is not None:
+            payload["project_id"] = project_id or None
+        if status is not None:
+            if status not in {"active", "archived", "deleted"}:
+                raise ValueError("Invalid discovery session status.")
+            payload["status"] = status
+            payload["deleted_at"] = _now() if status == "deleted" else None
+        if is_favorite is not None:
+            payload["is_favorite"] = is_favorite
+        return self._serialize(self.repository.update("demand_discovery_sessions", user_id=user_id, filters={"id": session_id}, payload=payload))
 
     def get_session(self, *, user_id: str, session_id: str) -> dict[str, Any]:
         return self._serialize(
@@ -327,6 +372,10 @@ class DemandDiscoveryService:
         return {
             "id": session["id"],
             "title": session["title"],
+            "query": session.get("last_input") or "",
+            "project_id": session.get("project_id"),
+            "status": session.get("status") or "active",
+            "is_favorite": bool(session.get("is_favorite")),
             "messages": _message_list(session.get("messages")),
             "insight": session.get("insight"),
             "latest_demand_run_id": session.get("latest_demand_run_id"),

@@ -14,6 +14,11 @@ export const PLANS: Record<
     name: string;
     prices: Record<BillingCurrency, CurrencyPrice>;
     monthlyCredits: number;
+    savedItemLimit: number | null;
+    features: {
+      pairAnalysis: boolean;
+      experimentCreate: boolean;
+    };
     contactOnly?: boolean;
   }
 > = {
@@ -25,6 +30,8 @@ export const PLANS: Record<
       usd: { amount: 0 },
     },
     monthlyCredits: 500,
+    savedItemLimit: 10,
+    features: { pairAnalysis: false, experimentCreate: false },
   },
   starter: {
     id: "starter",
@@ -34,6 +41,8 @@ export const PLANS: Record<
       usd: { amount: 24, stripePriceEnvKey: "STRIPE_PRICE_STARTER_MONTHLY_USD" },
     },
     monthlyCredits: 2500,
+    savedItemLimit: null,
+    features: { pairAnalysis: true, experimentCreate: false },
   },
   growth: {
     id: "growth",
@@ -43,6 +52,8 @@ export const PLANS: Record<
       usd: { amount: 55, stripePriceEnvKey: "STRIPE_PRICE_GROWTH_MONTHLY_USD" },
     },
     monthlyCredits: 8000,
+    savedItemLimit: null,
+    features: { pairAnalysis: true, experimentCreate: true },
   },
   business: {
     id: "business",
@@ -52,6 +63,8 @@ export const PLANS: Record<
       usd: { amount: 0 },
     },
     monthlyCredits: 0,
+    savedItemLimit: null,
+    features: { pairAnalysis: true, experimentCreate: true },
     contactOnly: true,
   },
 };

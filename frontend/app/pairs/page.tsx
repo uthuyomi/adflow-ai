@@ -17,6 +17,7 @@ import { useAdLpPairMutations, useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
 import { useRunPairAnalysis } from "@/hooks/use-analysis-runs";
 import { useUiStore } from "@/lib/store";
 import { useI18n } from "@/hooks/use-i18n";
+import { showActionableError } from "@/lib/api/errors";
 
 function AnalyzeButton({ pairId }: { pairId: string }) {
   const { t } = useI18n();
@@ -27,7 +28,7 @@ function AnalyzeButton({ pairId }: { pairId: string }) {
       await run.mutateAsync(aiMode);
       toast.success(t("pairs.analysisCompleted"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("pairs.analysisFailed"));
+      showActionableError(error, t("pairs.analysisFailed"), t("pricing.choosePlan"));
     }
   };
   return (

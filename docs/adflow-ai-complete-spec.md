@@ -1,5 +1,7 @@
 # AdFlow AI Complete Specification（日本語版）
 
+> **履歴資料:** 本書はPhase1〜8実装前の仕様・設計記録を含みます。現在の実装状態は [`adflow-ai-current-state.md`](adflow-ai-current-state.md)、残課題は [`unimplemented-features-audit.md`](unimplemented-features-audit.md)、リリース判定は [`phase8-audit-report.md`](phase8-audit-report.md) を正本として参照してください。本書内の「未実装」「一部実装」は作成時点の記録です。
+
 このファイルは、AdFlow AI の製品仕様、技術仕様、アルゴリズム仕様、将来開発の引き継ぎ資料を 1 つにまとめた完全仕様書です。
 
 記載方針:

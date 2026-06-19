@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 from typing import Any, Literal
 
 import requests
@@ -36,6 +37,7 @@ from backend.services.analytics.storage_service import (
     SupabaseCollectionStorage,
 )
 from backend.services.billing.credits import CREDIT_COSTS, CreditService, InsufficientCreditsError
+from backend.services.billing.entitlements import PlanAccessError, PlanEntitlementService
 from backend.services.codex.codex_task_service import CodexTaskService
 from backend.services.github.github_pr_client import GitHubPRClient
 from backend.services.github.pr_service import PRService
@@ -44,8 +46,10 @@ from backend.services.history.change_history_service import ChangeHistoryService
 from backend.services.improvements.improvement_workflow_service import ImprovementWorkflowService
 from backend.services.lp.lp_collector import LPCollection, LPCollector
 from backend.services.demand.demand_intelligence_service import DemandIntelligenceService
+from backend.services.demand.lp_report_snapshot_service import LPReportSnapshotService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
+from backend.services.operations.workspace_service import WorkspaceService
 from backend.services.product.ad_ab_test_service import AdABTestService
 from backend.services.product.ad_optimization_service import AdOptimizationService
 from backend.services.product.asset_import_service import AssetImportService
@@ -56,6 +60,7 @@ from backend.services.x_ads.x_ads_service import XAdsService
 app = FastAPI(title="AdFlow AI")
 _AUTHENTICATED_USER_EMAILS: dict[str, str] = {}
 _GITHUB_SYNC_TASK: asyncio.Task[None] | None = None
+_EXPERIMENT_SYNC_TASK: asyncio.Task[None] | None = None
 
 
 async def _github_sync_loop() -> None:
@@ -69,20 +74,34 @@ async def _github_sync_loop() -> None:
             continue
 
 
+async def _experiment_sync_loop() -> None:
+    while True:
+        await asyncio.sleep(max(60, int(os.getenv("ADFLOW_EXPERIMENT_SYNC_INTERVAL_SECONDS", "3600"))))
+        try:
+            await asyncio.to_thread(_build_ad_ab_test_service(load_settings()).sync_running_experiments)
+        except Exception:
+            continue
+
+
 @app.on_event("startup")
 async def start_github_sync_loop() -> None:
-    global _GITHUB_SYNC_TASK
+    global _GITHUB_SYNC_TASK, _EXPERIMENT_SYNC_TASK
     settings = load_settings()
     if settings.github_sync_enabled and settings.storage_provider == "supabase" and settings.github_token_encryption_key:
         _GITHUB_SYNC_TASK = asyncio.create_task(_github_sync_loop())
+    if settings.experiment_sync_enabled and settings.storage_provider == "supabase":
+        _EXPERIMENT_SYNC_TASK = asyncio.create_task(_experiment_sync_loop())
 
 
 @app.on_event("shutdown")
 async def stop_github_sync_loop() -> None:
-    global _GITHUB_SYNC_TASK
+    global _GITHUB_SYNC_TASK, _EXPERIMENT_SYNC_TASK
     if _GITHUB_SYNC_TASK:
         _GITHUB_SYNC_TASK.cancel()
         _GITHUB_SYNC_TASK = None
+    if _EXPERIMENT_SYNC_TASK:
+        _EXPERIMENT_SYNC_TASK.cancel()
+        _EXPERIMENT_SYNC_TASK = None
 
 
 def _cors_origins() -> list[str]:
@@ -210,6 +229,48 @@ class DemandSolutionFitRequest(BaseModel):
 class DemandDiscoveryInputRequest(BaseModel):
     input: str = Field(min_length=1)
     locale: Literal["ja", "en"] = "ja"
+    project_id: str | None = None
+
+
+class DemandDiscoverySessionUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    project_id: str | None = None
+    status: Literal["active", "archived", "deleted"] | None = None
+    is_favorite: bool | None = None
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+
+
+class ProjectUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    status: Literal["ACTIVE", "PAUSED", "ARCHIVED", "DELETED"] | None = None
+
+
+class NotificationUpdateRequest(BaseModel):
+    read: bool = True
+
+
+class SavedViewRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    view_type: str = Field(min_length=1, max_length=100)
+    filters: dict[str, Any] = Field(default_factory=dict)
+    search_query: str = Field(default="", max_length=500)
+    sort: dict[str, Any] = Field(default_factory=dict)
+    is_favorite: bool = False
+    is_shared: bool = False
+
+
+class WorkspaceSettingsRequest(BaseModel):
+    timezone: str | None = Field(default=None, max_length=100)
+    locale: Literal["ja", "en"] | None = None
+    default_view: str | None = Field(default=None, max_length=200)
+    display_density: Literal["compact", "comfortable"] | None = None
+    search_preferences: dict[str, Any] | None = None
+    notification_preferences: dict[str, Any] | None = None
 
 
 class DemandDiscoveryResearchRequest(BaseModel):
@@ -280,12 +341,60 @@ class ApproveXAdsPublishRequest(BaseModel):
 class CreateAdABTestRequest(BaseModel):
     name: str = Field(min_length=1)
     hypothesis: str | None = None
-    primary_metric: Literal["ctr", "cvr", "cpc"] = "ctr"
+    primary_metric: Literal["ctr", "cvr", "cpc", "cpa", "conversion", "revenue", "roas", "bounce_rate", "cta_click_rate", "form_submit_rate"] = "ctr"
     ad_ids: list[str] = Field(min_length=2)
+    experiment_type: str = "AD"
+    target_type: str = "AD"
+    outcome_id: str | None = None
+    minimum_sample_size: int = Field(default=100, ge=1)
+    confidence_threshold: float = Field(default=0.95, ge=0.5, le=0.999)
 
 
 class UpdateAdABTestStatusRequest(BaseModel):
-    status: Literal["draft", "running", "completed", "archived"]
+    status: Literal["DRAFT", "READY", "RUNNING", "PAUSED", "COMPLETED", "FAILED", "ARCHIVED"]
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class UpdateExperimentRequest(BaseModel):
+    name: str | None = None
+    hypothesis: str | None = None
+    primary_metric: str | None = None
+    minimum_sample_size: int | None = Field(default=None, ge=1)
+    confidence_threshold: float | None = Field(default=None, ge=0.5, le=0.999)
+    evaluation_window_days: int | None = Field(default=None, ge=1)
+
+
+class ExperimentAllocationRequest(BaseModel):
+    allocations: list[dict[str, Any]] = Field(min_length=2)
+
+
+class ExperimentVariantRequest(BaseModel):
+    name: str | None = None
+    label: str | None = None
+    description: str | None = None
+    twitter_ad_id: str | None = None
+    landing_page_id: str | None = None
+    allocation: float | None = Field(default=None, gt=0, le=100)
+    status: str | None = None
+    configuration: dict[str, Any] = Field(default_factory=dict)
+
+
+class LPAnalyticsEventRequest(BaseModel):
+    experiment_id: str
+    variant_id: str
+    session_id: str = Field(min_length=1, max_length=200)
+    event_name: Literal["PAGE_VIEW", "BOUNCE", "SCROLL_DEPTH", "TIME_ON_PAGE", "CTA_CLICK", "FORM_SUBMIT", "CONVERSION", "REVENUE"]
+    event_value: float | None = None
+    revenue: float = 0
+    occurred_at: str | None = None
+    idempotency_key: str = Field(min_length=8, max_length=200)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PublicLPAnalyticsEventRequest(LPAnalyticsEventRequest):
+    tracking_token: str = Field(min_length=20, max_length=200)
+    event_name: Literal["PAGE_VIEW", "BOUNCE", "SCROLL_DEPTH", "TIME_ON_PAGE", "CTA_CLICK", "FORM_SUBMIT"]
+    revenue: Literal[0] = 0
 
 
 class OutcomeCreateRequest(BaseModel):
@@ -366,6 +475,181 @@ def _authenticated_user_id(authorization: str | None = Header(default=None)) -> 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def readiness() -> dict[str, str]:
+    settings = load_settings()
+    try:
+        settings.validate_runtime()
+        _repository_for_settings(settings).get_related_many("ad_projects", filters={}, limit=1)
+    except (ValueError, requests.RequestException) as exc:
+        raise HTTPException(status_code=503, detail=f"Application is not ready: {exc}") from exc
+    return {
+        "status": "ready",
+        "environment": settings.deployment_environment,
+        "storage_provider": settings.storage_provider,
+        "ai_provider": settings.ai_provider,
+    }
+
+
+@app.get("/operations/projects")
+def list_workspace_projects(status: str | None = None, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_workspace_service(load_settings()).list_projects(user_id=user_id, status=status)
+
+
+@app.post("/operations/projects")
+def create_workspace_project(request: ProjectCreateRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    _require_saved_item_capacity(user_id=user_id)
+    return _build_workspace_service(load_settings()).create_project(user_id=user_id, name=request.name, description=request.description)
+
+
+@app.patch("/operations/projects/{project_id}")
+def update_workspace_project(project_id: str, request: ProjectUpdateRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        if request.status == "ACTIVE":
+            current = _repository_for_settings(load_settings()).get_one(
+                "ad_projects",
+                user_id=user_id,
+                filters={"id": project_id},
+            )
+            if current.get("status") == "DELETED":
+                _require_saved_item_capacity(user_id=user_id)
+        return _build_workspace_service(load_settings()).update_project(user_id=user_id, project_id=project_id, payload=request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/operations/projects/{project_id}/duplicate")
+def duplicate_workspace_project(project_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        repository = _repository_for_settings(load_settings())
+        source_size = 1 + sum(
+            repository.count(table, user_id=user_id, filters={"project_id": project_id})
+            for table in ("twitter_ads", "landing_pages", "ad_lp_pairs")
+        )
+        _require_saved_item_capacity(user_id=user_id, additional_items=source_size)
+        return _build_workspace_service(load_settings()).duplicate_project(user_id=user_id, project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/operations/search")
+def global_workspace_search(q: str, limit: int = 30, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_workspace_service(load_settings()).search(user_id=user_id, query=q, limit=limit)
+
+
+@app.get("/operations/dashboard")
+def operations_dashboard(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_workspace_service(load_settings()).dashboard(user_id=user_id)
+
+
+@app.get("/operations/notifications")
+def list_notifications(unread_only: bool = False, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_workspace_service(load_settings()).list_notifications(user_id=user_id, unread_only=unread_only)
+
+
+@app.patch("/operations/notifications/{notification_id}")
+def update_notification(notification_id: str, request: NotificationUpdateRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_workspace_service(load_settings()).update_notification(user_id=user_id, notification_id=notification_id, read=request.read)
+
+
+@app.delete("/operations/notifications/{notification_id}")
+def delete_notification(notification_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, bool]:
+    _build_workspace_service(load_settings()).delete_notification(user_id=user_id, notification_id=notification_id)
+    return {"deleted": True}
+
+
+@app.get("/operations/activity")
+def list_activity(project_id: str | None = None, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_workspace_service(load_settings()).list_activity(user_id=user_id, project_id=project_id)
+
+
+@app.get("/operations/jobs")
+def list_background_jobs(status: str | None = None, user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_workspace_service(load_settings()).list_jobs(user_id=user_id, status=status)
+
+
+@app.post("/operations/jobs/{job_id}/retry")
+def retry_background_job(job_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    service = _build_workspace_service(load_settings())
+    try:
+        job = service.get_job(user_id=user_id, job_id=job_id)
+        service.retry_job(user_id=user_id, job_id=job_id)
+        if job["job_type"] == "codex_task_prompts":
+            result = _build_codex_service(load_settings()).execute_real(
+                user_id=user_id,
+                task_id=job["target_id"],
+                idempotency_key=f"background-retry:{job_id}:{int(job.get('attempt_count') or 0) + 1}",
+            )
+        elif job["job_type"] == "demand_intelligence_runs":
+            _require_feature_credits(user_id=user_id, feature_key="demand_intelligence")
+            source = _repository_for_settings(load_settings()).get_one(
+                "demand_intelligence_runs", user_id=user_id, filters={"id": job["target_id"]}
+            )
+            result = _build_demand_intelligence_service(load_settings()).run(
+                user_id=user_id,
+                project_id=source.get("project_id"),
+                ad_lp_pair_id=source.get("ad_lp_pair_id"),
+                query=source["query"],
+                mode=source.get("mode") or "pair_analysis",
+                discovery_session_id=source.get("discovery_session_id"),
+                scope_type=source.get("scope_type"),
+                target_segment=source.get("target_segment"),
+                problem_statement=source.get("problem_statement"),
+                product_idea=source.get("product_idea"),
+                research_query=source.get("research_query"),
+            )
+            _consume_feature_credits(
+                user_id=user_id,
+                feature_key="demand_intelligence",
+                metadata={"endpoint": f"/operations/jobs/{job_id}/retry", "retry_run_id": result.get("id")},
+            )
+        else:
+            raise ValueError(f"Retry is not supported for job type {job['job_type']}.")
+        return service.finish_job_retry(
+            user_id=user_id,
+            job_id=job_id,
+            succeeded=True,
+            result={"retry_target_id": result.get("id") or result.get("task", {}).get("id")},
+        )
+    except Exception as exc:
+        try:
+            service.finish_job_retry(user_id=user_id, job_id=job_id, succeeded=False, error=str(exc))
+        except ValueError:
+            pass
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/operations/saved-views")
+def list_saved_views(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
+    return _build_workspace_service(load_settings()).list_saved_views(user_id=user_id)
+
+
+@app.post("/operations/saved-views")
+def create_saved_view(request: SavedViewRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_workspace_service(load_settings()).create_saved_view(user_id=user_id, payload=request.model_dump())
+
+
+@app.patch("/operations/saved-views/{view_id}")
+def update_saved_view(view_id: str, request: SavedViewRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_workspace_service(load_settings()).update_saved_view(user_id=user_id, view_id=view_id, payload=request.model_dump())
+
+
+@app.delete("/operations/saved-views/{view_id}")
+def delete_saved_view(view_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, bool]:
+    _build_workspace_service(load_settings()).delete_saved_view(user_id=user_id, view_id=view_id)
+    return {"deleted": True}
+
+
+@app.get("/operations/settings")
+def get_workspace_settings(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_workspace_service(load_settings()).get_settings(user_id=user_id)
+
+
+@app.patch("/operations/settings")
+def update_workspace_settings(request: WorkspaceSettingsRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_workspace_service(load_settings()).update_settings(user_id=user_id, payload=request.model_dump(exclude_none=True))
 
 
 @app.get("/ad-optimization/projects")
@@ -459,6 +743,7 @@ def create_ad_ab_test(
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
+        _require_plan_feature(user_id=user_id, feature="experiment_create")
         return _build_ad_ab_test_service(load_settings()).create_test(
             user_id=user_id,
             project_id=project_id,
@@ -466,6 +751,11 @@ def create_ad_ab_test(
             hypothesis=request.hypothesis,
             primary_metric=request.primary_metric,
             ad_ids=request.ad_ids,
+            experiment_type=request.experiment_type,
+            target_type=request.target_type,
+            outcome_id=request.outcome_id,
+            minimum_sample_size=request.minimum_sample_size,
+            confidence_threshold=request.confidence_threshold,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -482,14 +772,144 @@ def update_ad_ab_test_status(
             user_id=user_id,
             test_id=test_id,
             status=request.status,
+            reason=request.reason,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/experiments")
+def list_experiments(
+    project_id: str | None = None,
+    status: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).list_tests(user_id=user_id, project_id=project_id, status=status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/experiments/dashboard")
+def get_experiment_dashboard(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_ad_ab_test_service(load_settings()).executive_dashboard(user_id=user_id)
+
+
+@app.get("/experiments/learning")
+def get_experiment_learning(project_id: str | None = None, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    return _build_ad_ab_test_service(load_settings()).learning_context(user_id=user_id, project_id=project_id)
+
+
+@app.get("/experiments/{test_id}")
+def get_experiment(test_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).detail(user_id=user_id, test_id=test_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/experiments/{test_id}")
+def update_experiment(test_id: str, request: UpdateExperimentRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).update_test(user_id=user_id, test_id=test_id, payload=request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/experiments/{test_id}")
+def delete_experiment(test_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, bool]:
+    try:
+        _build_ad_ab_test_service(load_settings()).delete_test(user_id=user_id, test_id=test_id)
+        return {"deleted": True}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/experiments/{test_id}/allocations")
+def update_experiment_allocations(test_id: str, request: ExperimentAllocationRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).update_allocations(user_id=user_id, test_id=test_id, allocations=request.allocations)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiments/{test_id}/variants")
+def create_experiment_variant(test_id: str, request: ExperimentVariantRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).create_variant(user_id=user_id, test_id=test_id, payload=request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/experiments/{test_id}/variants/{variant_id}")
+def update_experiment_variant(test_id: str, variant_id: str, request: ExperimentVariantRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).update_variant(user_id=user_id, test_id=test_id, variant_id=variant_id, payload=request.model_dump(exclude_none=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/experiments/{test_id}/variants/{variant_id}")
+def delete_experiment_variant(test_id: str, variant_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, bool]:
+    try:
+        _build_ad_ab_test_service(load_settings()).delete_variant(user_id=user_id, test_id=test_id, variant_id=variant_id)
+        return {"deleted": True}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiments/lp-events")
+def ingest_experiment_lp_event(request: LPAnalyticsEventRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).ingest_lp_event(user_id=user_id, payload=request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/public/experiments/lp-events")
+def ingest_public_experiment_lp_event(request: PublicLPAnalyticsEventRequest) -> dict[str, Any]:
+    try:
+        payload = request.model_dump(exclude={"tracking_token"})
+        return _build_ad_ab_test_service(load_settings()).ingest_public_lp_event(tracking_token=request.tracking_token, payload=payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/public/experiments/assign")
+def assign_public_experiment_variant(tracking_token: str, session_id: str) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).assign_variant(tracking_token=tracking_token, session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/experiments/{test_id}/measurements/collect")
+def collect_experiment_measurements(test_id: str, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).collect_measurements(user_id=user_id, test_id=test_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/experiments/{test_id}/evaluate")
+def evaluate_experiment(test_id: str, complete: bool = False, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    try:
+        return _build_ad_ab_test_service(load_settings()).evaluate(user_id=user_id, test_id=test_id, complete=complete)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/demand-discovery/sessions")
-def list_demand_discovery_sessions(user_id: str = Depends(_authenticated_user_id)) -> list[dict[str, Any]]:
-    return _build_demand_discovery_service(load_settings()).list_sessions(user_id=user_id)
+def list_demand_discovery_sessions(
+    project_id: str | None = None,
+    status: str | None = None,
+    favorite: bool | None = None,
+    q: str | None = None,
+    user_id: str = Depends(_authenticated_user_id),
+) -> list[dict[str, Any]]:
+    return _build_demand_discovery_service(load_settings()).list_sessions(
+        user_id=user_id, project_id=project_id, status=status, favorite=favorite, query=q
+    )
 
 
 @app.post("/demand-discovery/sessions")
@@ -498,7 +918,10 @@ def create_demand_discovery_session(
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
-        return _build_demand_discovery_service(load_settings()).create_session(user_id=user_id, input_text=request.input, locale=request.locale)
+        _require_saved_item_capacity(user_id=user_id)
+        return _build_demand_discovery_service(load_settings()).create_session(
+            user_id=user_id, input_text=request.input, locale=request.locale, project_id=request.project_id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -509,6 +932,28 @@ def get_demand_discovery_session(session_id: str, user_id: str = Depends(_authen
         return _build_demand_discovery_service(load_settings()).get_session(user_id=user_id, session_id=session_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/demand-discovery/sessions/{session_id}")
+def update_demand_discovery_session(
+    session_id: str,
+    request: DemandDiscoverySessionUpdateRequest,
+    user_id: str = Depends(_authenticated_user_id),
+) -> dict[str, Any]:
+    try:
+        if request.status == "active":
+            current = _repository_for_settings(load_settings()).get_one(
+                "demand_discovery_sessions",
+                user_id=user_id,
+                filters={"id": session_id},
+            )
+            if current.get("status") == "deleted":
+                _require_saved_item_capacity(user_id=user_id)
+        return _build_demand_discovery_service(load_settings()).update_session(
+            user_id=user_id, session_id=session_id, **request.model_dump(exclude_none=True)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/demand-discovery/sessions/{session_id}/messages")
@@ -580,6 +1025,10 @@ def import_landing_page_from_url(
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
+        repository = _repository_for_settings(load_settings())
+        existing = repository.get_many("landing_pages", user_id=user_id, filters={"url": request.url}, limit=1)
+        if not existing:
+            _require_saved_item_capacity(user_id=user_id)
         return _build_asset_import_service(load_settings()).import_lp_from_url(
             user_id=user_id,
             url=request.url,
@@ -598,6 +1047,7 @@ def import_ads_csv(
     user_id: str = Depends(_authenticated_user_id),
 ) -> dict[str, Any]:
     try:
+        _require_saved_item_capacity(user_id=user_id)
         return _build_asset_import_service(load_settings()).import_ads_csv(
             user_id=user_id,
             csv_text=request.csv_text,
@@ -790,6 +1240,7 @@ def run_workflow(
 ) -> AdFlowWorkflowResult:
     request = request or AdFlowRunRequest()
     try:
+        _require_plan_feature(user_id=user_id, feature="pair_analysis")
         _require_feature_credits(user_id=user_id, feature_key="workflow_run")
         workflow = _build_workflow(request.ads, request.lp, load_settings())
         result = workflow.run(request.workflow)
@@ -807,6 +1258,7 @@ def run_pair_analysis(
 ) -> dict[str, Any]:
     request = request or PairAnalysisRequest()
     try:
+        _require_plan_feature(user_id=user_id, feature="pair_analysis")
         _require_feature_credits(user_id=user_id, feature_key="pair_analysis")
         result = _build_registered_pair_analysis(load_settings()).run(
             user_id=user_id,
@@ -874,6 +1326,35 @@ def run_demand_intelligence(
                 metadata={"endpoint": "/demand-intelligence/run", "run_id": run["id"], "idempotency_key": request.idempotency_key},
             )
         return {"run_id": run["id"], "status": run["status"], "run": run, "reused": bool(run.get("_reused"))}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/internal/lp-report-snapshot/refresh")
+def refresh_lp_report_snapshot(x_cron_secret: str | None = Header(default=None)) -> dict[str, Any]:
+    settings = load_settings()
+    expected = settings.lp_snapshot_cron_secret
+    if not expected or not x_cron_secret or not secrets.compare_digest(expected, x_cron_secret):
+        raise HTTPException(status_code=401, detail="Invalid cron secret.")
+    required = {
+        "ADFLOW_LP_SNAPSHOT_USER_ID": settings.lp_snapshot_user_id,
+        "ADFLOW_LP_SNAPSHOT_PROJECT_ID": settings.lp_snapshot_project_id,
+        "ADFLOW_LP_SNAPSHOT_PAIR_ID": settings.lp_snapshot_pair_id,
+    }
+    missing = [key for key, value in required.items() if not value]
+    if missing:
+        raise HTTPException(status_code=503, detail=f"Missing snapshot configuration: {', '.join(missing)}")
+    repository = _repository_for_settings(settings)
+    try:
+        return LPReportSnapshotService(
+            repository=repository,
+            demand_service=_build_demand_intelligence_service(settings),
+        ).refresh(
+            user_id=str(settings.lp_snapshot_user_id),
+            project_id=str(settings.lp_snapshot_project_id),
+            pair_id=str(settings.lp_snapshot_pair_id),
+            query=settings.lp_snapshot_query,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1494,6 +1975,21 @@ def get_billing_profile(user_id: str = Depends(_authenticated_user_id)) -> dict[
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/billing/entitlements")
+def get_billing_entitlements(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+    service = PlanEntitlementService(_repository_for_settings(load_settings()))
+    entitlements = service.get_entitlements(user_id=user_id)
+    return {
+        "plan": entitlements.plan,
+        "savedItemLimit": entitlements.saved_item_limit,
+        "savedItemCount": service.saved_item_count(user_id=user_id),
+        "features": {
+            "pairAnalysis": entitlements.pair_analysis,
+            "experimentCreate": entitlements.experiment_create,
+        },
+    }
+
+
 @app.get("/credits/me")
 def get_credit_balance(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
     try:
@@ -1705,6 +2201,26 @@ def _ensure_auto_top_up_credits(
     )
 
 
+def _require_plan_feature(*, user_id: str, feature: str) -> None:
+    try:
+        PlanEntitlementService(_repository_for_settings(load_settings())).require_feature(
+            user_id=user_id,
+            feature=feature,
+        )
+    except PlanAccessError as exc:
+        raise HTTPException(status_code=403, detail=exc.detail()) from exc
+
+
+def _require_saved_item_capacity(*, user_id: str, additional_items: int = 1) -> None:
+    try:
+        PlanEntitlementService(_repository_for_settings(load_settings())).require_saved_item_capacity(
+            user_id=user_id,
+            additional_items=additional_items,
+        )
+    except PlanAccessError as exc:
+        raise HTTPException(status_code=403, detail=exc.detail()) from exc
+
+
 def _build_outcome_service(settings: Settings) -> ImprovementOutcomeService:
     if settings.supabase_url is None or settings.supabase_key is None:
         raise ValueError("SUPABASE_URL and Supabase key are required.")
@@ -1714,6 +2230,10 @@ def _build_outcome_service(settings: Settings) -> ImprovementOutcomeService:
             supabase_key=settings.supabase_key,
         ),
     )
+
+
+def _build_workspace_service(settings: Settings) -> WorkspaceService:
+    return WorkspaceService(repository=_repository_for_settings(settings))
 
 
 def _build_orchestrator(settings: Settings) -> AIOrchestrator:

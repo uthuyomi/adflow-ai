@@ -1,5 +1,0 @@
-"use client";
-import { Check, X } from "lucide-react";
-import type { LpCopy } from "@/lib/i18n/lp";
-import { Reveal, SectionHeading } from "./shared";
-export function ChatGPTComparisonSection({c}:{c:LpCopy}){return <section className="border-y border-border bg-[#F9FAFB] py-20 md:py-[120px]" id="chatgpt-comparison"><div className="mx-auto max-w-[1100px] px-4 md:px-6"><SectionHeading title={c.compare.title} body={c.compare.body}/><Reveal className="mt-12 overflow-hidden rounded-2xl border border-border bg-white"><div className="grid grid-cols-2 border-b border-border text-lg font-semibold"><div className="p-5">{c.compare.left}</div><div className="border-l border-border p-5 text-primary">{c.compare.right}</div></div>{c.compare.leftItems.map((x,i)=><div className="grid grid-cols-2 border-b border-border last:border-0" key={x}><div className="flex gap-3 p-5 text-sm text-muted-foreground"><X className="h-4 w-4 shrink-0"/>{x}</div><div className="flex gap-3 border-l border-border p-5 text-sm font-medium"><Check className="h-4 w-4 shrink-0 text-primary"/>{c.compare.rightItems[i]}</div></div>)}</Reveal></div></section>}

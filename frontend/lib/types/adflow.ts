@@ -7,6 +7,10 @@ export type AdProject = {
   user_id: UUID;
   name: string;
   description: string | null;
+  status: "ACTIVE" | "PAUSED" | "ARCHIVED" | "DELETED";
+  archived_at: string | null;
+  deleted_at: string | null;
+  duplicated_from: UUID | null;
   created_at: string;
   updated_at: string;
 };

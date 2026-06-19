@@ -1,10 +1,10 @@
-import { en } from "@/locales/en";
+﻿import { en } from "@/locales/en";
 
 export const ja = {
   ...en,
   "meta.default.description": "需要シグナルを発見し、AIで広告とLPを改善。",
-  "meta.home.title": "AdFlow AI | 開発判断プラットフォーム",
-  "meta.home.description": "何か月も作り込む前に、市場の根拠を開発判断、ポジショニング、次の推奨アクションへ変換します。",
+  "meta.home.title": "AdFlow AI | 広告改善オペレーションツール",
+  "meta.home.description": "競合調査、広告とLPの整合性分析、改善、Outcome、Learningを一つのワークスペースで管理します。",
   "meta.features.title": "AdFlow AI 機能一覧",
   "meta.features.description": "需要シグナル、広告LP分析、AIレビュー、Outcome Learningを確認できます。",
   "meta.pricing.title": "AdFlow AI 料金",
@@ -43,6 +43,7 @@ export const ja = {
   "nav.login": "ログイン",
   "nav.dashboard": "ダッシュボード",
   "nav.projects": "プロジェクト",
+  "nav.operations": "運用管理",
   "nav.ads": "X広告",
   "nav.lps": "LP",
   "nav.pairs": "広告LPペア",
@@ -95,9 +96,9 @@ export const ja = {
   "marketing.benefit": "利点",
   "marketing.example": "利用例",
 
-  "home.eyebrow": "SaaS開発者・個人開発者・マーケターのための需要発見AI",
-  "home.title": "作る前に、需要を見つける。",
-  "home.subtitle": "レビュー、SNS、競合メッセージ、検索意図から顧客の痛みと市場ギャップを発見し、時間や予算を投じる前に判断材料へつなげます。",
+  "home.eyebrow": "広告改善ワークスペース",
+  "home.title": "広告とランディングページの改善ワークフローを一か所で管理。",
+  "home.subtitle": "競合調査、広告とLPの整合性分析、改善生成、Outcome追跡、継続的な学習を一つのワークスペースで管理します。",
   "home.quickWorkflow.reviews": "レビュー",
   "home.quickWorkflow.social": "SNS",
   "home.quickWorkflow.competitors": "競合メッセージ",
@@ -643,6 +644,7 @@ export const ja = {
   "nav.demandDiscovery": "需要発見",
   "nav.results": "結果",
   "nav.outcomes": "成果",
+  "nav.experiments": "実験",
 
   "adOptimization.title": "広告改善",
   "adOptimization.description": "広告とランディングページを1つの改善ワークフローとして管理し、設定、分析、提案、実測結果まで確認できます。",

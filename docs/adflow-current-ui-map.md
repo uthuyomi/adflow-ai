@@ -1,5 +1,7 @@
 # AdFlow AI Current UI Map
 
+> **履歴資料:** 本書はPhase7・Phase8以前のUIマップです。現在の画面構成と実装状態は [`adflow-ai-current-state.md`](adflow-ai-current-state.md) と [`phase8-audit-report.md`](phase8-audit-report.md) を参照してください。
+
 このドキュメントは、AdFlow AI の現在の UI 表示内容、画面構造、主要ワークフロー、状態表示をページ単位で把握するための監査用メモです。UI 改修案ではなく、現状の実装を別のレビュアーや AI が確認できるように整理したものです。
 
 確認対象:

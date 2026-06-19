@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { normalizeSupabaseError } from "@/lib/api/errors";
 import type {
   AdLpPair,
   AdProject,
@@ -34,7 +35,7 @@ const entityLabels: Record<EntityName, string> = {
 export async function getCurrentUser(): Promise<User> {
   const supabase = getSupabaseBrowserClient();
   const { data, error } = await supabase.auth.getUser();
-  if (error) throw error;
+  if (error) throw normalizeSupabaseError(error);
   if (!data.user) throw new Error("Login is required.");
   return data.user;
 }
@@ -48,7 +49,7 @@ export async function listEntities<TName extends EntityName>(
     .from(table)
     .select(select)
     .order("created_at", { ascending: false });
-  if (error) throw error;
+  if (error) throw normalizeSupabaseError(error);
   return (data ?? []) as unknown as EntityMap[TName][];
 }
 
@@ -72,7 +73,7 @@ export async function createEntity<TName extends EntityName>(
   const supabase = getSupabaseBrowserClient();
   const insertPayload = { ...payload, user_id: user.id };
   const { data, error } = await supabase.from(table).insert(insertPayload as never).select("*").single();
-  if (error) throw error;
+  if (error) throw normalizeSupabaseError(error);
   const history = await insertHistory({
     userId: user.id,
     entityType: entityLabels[table],

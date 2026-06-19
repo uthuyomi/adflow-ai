@@ -17,6 +17,8 @@ import { useTwitterAds } from "@/hooks/use-twitter-ads";
 import { useDemandIntelligenceDashboard, useOutcomesDashboard } from "@/hooks/useAdflowData";
 import { useImprovementStats } from "@/hooks/useImprovement";
 import { useOutcomeStats } from "@/hooks/use-outcomes";
+import { useJobs, useOperationsDashboard } from "@/hooks/use-operations";
+import { useExperimentDashboard } from "@/hooks/use-experiments";
 
 export default function DashboardPage() {
   const { t } = useI18n();
@@ -28,8 +30,11 @@ export default function DashboardPage() {
   const outcomes = useOutcomesDashboard();
   const improvementStats = useImprovementStats();
   const outcomeStats = useOutcomeStats();
-  const isLoading = projects.isLoading || ads.isLoading || landingPages.isLoading || pairs.isLoading || demand.isLoading || outcomes.isLoading || improvementStats.isLoading || outcomeStats.isLoading;
-  const isError = projects.isError || ads.isError || landingPages.isError || pairs.isError || demand.isError || outcomes.isError || improvementStats.isError || outcomeStats.isError;
+  const operations = useOperationsDashboard();
+  const jobs = useJobs();
+  const experiments = useExperimentDashboard();
+  const isLoading = projects.isLoading || ads.isLoading || landingPages.isLoading || pairs.isLoading || demand.isLoading || outcomes.isLoading || improvementStats.isLoading || outcomeStats.isLoading || operations.isLoading || jobs.isLoading || experiments.isLoading;
+  const isError = projects.isError || ads.isError || landingPages.isError || pairs.isError || demand.isError || outcomes.isError || improvementStats.isError || outcomeStats.isError || operations.isError || jobs.isError || experiments.isError;
 
   if (isLoading) return <PageSkeleton />;
   if (isError) return <ErrorState />;
@@ -97,6 +102,31 @@ export default function DashboardPage() {
           <ResultRow label="Learning records" value={outcomeStats.data?.learning.learning_count ?? 0} />
         </CardContent>
       </Card>
+      <Card>
+        <CardHeader><CardTitle>Experiment monitoring and revenue impact</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <ResultRow label="Active experiments" value={experiments.data?.active_experiments ?? 0} />
+          <ResultRow label="Winning variants" value={experiments.data?.winning_variants ?? 0} />
+          <ResultRow label="Failing variants" value={experiments.data?.failing_variants ?? 0} />
+          <ResultRow label="Experiment success %" value={experiments.data?.success_rate ?? 0} />
+          <ResultRow label="Avg improvement %" value={Math.round((experiments.data?.average_improvement_rate ?? 0) * 10000) / 100} />
+          <ResultRow label="Revenue impact" value={experiments.data?.total_revenue_impact ?? 0} />
+        </CardContent>
+      </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card><CardHeader><CardTitle>Operations queue</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">
+          <ResultRow label="Active projects" value={operations.data?.active_projects ?? 0} />
+          <ResultRow label="Pending improvements" value={operations.data?.pending_improvements ?? 0} />
+          <ResultRow label="Codex tasks" value={operations.data?.codex_tasks ?? 0} />
+          <ResultRow label="Open PRs" value={operations.data?.open_prs ?? 0} />
+          <ResultRow label="Outcomes awaiting measurement" value={operations.data?.pending_outcomes ?? 0} />
+          <ResultRow label="Failed jobs" value={operations.data?.failed_jobs ?? 0} />
+        </CardContent></Card>
+        <Card><CardHeader><CardTitle>Recent activity</CardTitle></CardHeader><CardContent className="space-y-3">
+          {(operations.data?.recent_activity ?? []).slice(0, 6).map((item) => <div className="border-l-2 border-primary/30 pl-3" key={item.id}><div className="text-sm font-medium">{item.title}</div><div className="text-xs text-muted-foreground">{item.category} · {item.action}</div></div>)}
+          {!operations.data?.recent_activity?.length ? <p className="text-sm text-muted-foreground">No activity recorded yet.</p> : null}
+        </CardContent></Card>
+      </div>
     </div>
   );
 }

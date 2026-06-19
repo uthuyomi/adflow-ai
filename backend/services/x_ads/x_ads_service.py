@@ -417,7 +417,8 @@ class XAdsService:
                     user_id=user_id, project_id=request["project_id"], name=f"Approved X ad test: {source_ad.get('name') or source_ad['id']}",
                     hypothesis=request.get("hypothesis"), primary_metric=request.get("primary_metric") or "ctr", ad_ids=[source_ad["id"], created_ad["id"]],
                 )
-                test = AdABTestService(repository=self.repository).update_status(user_id=user_id, test_id=test["id"], status="running")
+                test = AdABTestService(repository=self.repository).update_status(user_id=user_id, test_id=test["id"], status="READY")
+                test = AdABTestService(repository=self.repository).update_status(user_id=user_id, test_id=test["id"], status="RUNNING")
                 request = self.repository.update("x_ads_publish_requests", user_id=user_id, filters={"id": request_id}, payload={"ab_test_id": test["id"]})
             if request.get("outcome_id"):
                 outcome = {"id": request["outcome_id"]}
@@ -435,6 +436,7 @@ class XAdsService:
                     payload={"before_metrics": _ad_metrics(source_ad), "measurement_source": "X_ADS"},
                 )
                 request = self.repository.update("x_ads_publish_requests", user_id=user_id, filters={"id": request_id}, payload={"outcome_id": outcome["id"]})
+            self.repository.update("ad_ab_tests", user_id=user_id, filters={"id": test["id"]}, payload={"outcome_id": outcome["id"], "updated_by": user_id})
             updated = self.repository.update(
                 "x_ads_publish_requests",
                 user_id=user_id,

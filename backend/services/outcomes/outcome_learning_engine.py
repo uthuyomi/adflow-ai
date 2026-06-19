@@ -71,19 +71,38 @@ class OutcomeLearningEngine:
             and (not improvement_type or row.get("improvement_type") == improvement_type)
             and (not market_type or row.get("market_type") == market_type)
         ]
+        try:
+            experiment_rows = self.repository.get_many("experiment_learning_data", user_id=user_id, filters={"project_id": project_id} if project_id else None, order="impact_score.desc", limit=limit)
+        except Exception:
+            experiment_rows = []
         return {
             "summary": self._summary(rows),
             "similar_summary": self._summary(similar),
             "similar_cases": similar[:10],
             "successful_patterns": self._group(rows, success=True),
             "failed_patterns": self._group(rows, success=False),
+            "experiment_patterns": [
+                {
+                    "experiment_type": row.get("experiment_type"),
+                    "winner_pattern": row.get("winner_pattern") or {},
+                    "loser_pattern": row.get("loser_pattern") or {},
+                    "impact_score": row.get("impact_score"),
+                    "confidence_score": row.get("confidence_score"),
+                }
+                for row in experiment_rows[:10]
+            ],
             "guardrail": "Historical outcomes guide prioritization but do not guarantee future performance.",
         }
 
     def stats(self, *, user_id: str) -> dict[str, Any]:
         rows = self.repository.get_many("outcome_learning_data", user_id=user_id, limit=1000)
+        try:
+            experiment_count = len(self.repository.get_many("experiment_learning_data", user_id=user_id, limit=1000))
+        except Exception:
+            experiment_count = 0
         return {
             **self._summary(rows),
+            "experiment_learning_count": experiment_count,
             "by_market": self._category_stats(rows, "market_type"),
             "by_improvement": self._category_stats(rows, "improvement_type"),
             "by_project": self._category_stats(rows, "project_id"),

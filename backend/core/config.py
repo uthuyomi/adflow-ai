@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    deployment_environment: Literal["development", "test", "production"] = "development"
     ai_provider: Literal["mock", "openai"] = "mock"
     github_provider: Literal["memory", "github"] = "memory"
     storage_provider: Literal["memory", "supabase"] = "memory"
@@ -22,6 +23,7 @@ class Settings(BaseModel):
     github_oauth_callback_url: str = "http://127.0.0.1:8000/integrations/github/oauth/callback"
     github_sync_enabled: bool = True
     github_sync_interval_seconds: int = Field(default=300, ge=30)
+    experiment_sync_enabled: bool = False
     codex_executable: str = "codex"
     codex_workspace: str | None = None
     codex_execution_timeout_seconds: int = Field(default=1800, ge=30)
@@ -65,8 +67,21 @@ class Settings(BaseModel):
     openai_embedding_model: str = "text-embedding-3-small"
     auto_top_up_credit_emails: set[str] = Field(default_factory=set)
     auto_top_up_credit_amount: int = 5000
+    lp_snapshot_cron_secret: str | None = None
+    lp_snapshot_user_id: str | None = None
+    lp_snapshot_project_id: str | None = None
+    lp_snapshot_pair_id: str | None = None
+    lp_snapshot_query: str = "demand validation software for solo SaaS founders"
 
     def validate_runtime(self) -> None:
+        if self.deployment_environment == "production":
+            if self.ai_provider != "openai":
+                raise ValueError("Production requires ADFLOW_AI_PROVIDER=openai.")
+            if self.storage_provider != "supabase":
+                raise ValueError("Production requires ADFLOW_STORAGE_PROVIDER=supabase.")
+            if self.demand_synthetic_fallback:
+                raise ValueError("Production requires DEMAND_SYNTHETIC_FALLBACK=false.")
+
         if self.ai_provider == "openai":
             if not os.getenv("OPENAI_API_KEY"):
                 raise ValueError("OPENAI_API_KEY is required when ADFLOW_AI_PROVIDER=openai.")
@@ -95,6 +110,7 @@ class Settings(BaseModel):
 
 def load_settings() -> Settings:
     return Settings(
+        deployment_environment=os.getenv("ADFLOW_ENV", "development"),
         ai_provider=os.getenv("ADFLOW_AI_PROVIDER", "mock"),
         github_provider=os.getenv("ADFLOW_GITHUB_PROVIDER", "memory"),
         storage_provider=os.getenv("ADFLOW_STORAGE_PROVIDER", "memory"),
@@ -108,6 +124,7 @@ def load_settings() -> Settings:
         github_oauth_callback_url=os.getenv("GITHUB_OAUTH_CALLBACK_URL", "http://127.0.0.1:8000/integrations/github/oauth/callback"),
         github_sync_enabled=_env_bool("GITHUB_SYNC_ENABLED", True),
         github_sync_interval_seconds=int(os.getenv("GITHUB_SYNC_INTERVAL_SECONDS", "300")),
+        experiment_sync_enabled=_env_bool("ADFLOW_EXPERIMENT_SYNC_ENABLED", False),
         codex_executable=os.getenv("CODEX_EXECUTABLE", "codex"),
         codex_workspace=os.getenv("CODEX_WORKSPACE"),
         codex_execution_timeout_seconds=int(os.getenv("CODEX_EXECUTION_TIMEOUT_SECONDS", "1800")),
@@ -154,6 +171,11 @@ def load_settings() -> Settings:
         openai_embedding_model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
         auto_top_up_credit_emails=_env_set("ADFLOW_AUTO_TOP_UP_CREDIT_EMAILS"),
         auto_top_up_credit_amount=int(os.getenv("ADFLOW_AUTO_TOP_UP_CREDIT_AMOUNT", "5000")),
+        lp_snapshot_cron_secret=os.getenv("ADFLOW_LP_SNAPSHOT_CRON_SECRET"),
+        lp_snapshot_user_id=os.getenv("ADFLOW_LP_SNAPSHOT_USER_ID"),
+        lp_snapshot_project_id=os.getenv("ADFLOW_LP_SNAPSHOT_PROJECT_ID"),
+        lp_snapshot_pair_id=os.getenv("ADFLOW_LP_SNAPSHOT_PAIR_ID"),
+        lp_snapshot_query=os.getenv("ADFLOW_LP_SNAPSHOT_QUERY", "demand validation software for solo SaaS founders"),
     )
 
 

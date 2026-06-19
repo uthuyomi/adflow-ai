@@ -1,6 +1,7 @@
 "use client";
 
 import { getApiBaseUrl } from "@/lib/api/client";
+import { apiErrorFromResponse } from "@/lib/api/errors";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export async function requestWithAuth<T>(path: string, init?: RequestInit): Promise<T> {
@@ -10,6 +11,6 @@ export async function requestWithAuth<T>(path: string, init?: RequestInit): Prom
     ...init,
     headers: { Authorization: `Bearer ${data.session.access_token}`, "Content-Type": "application/json", ...init?.headers },
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }

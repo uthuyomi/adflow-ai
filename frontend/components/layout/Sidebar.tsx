@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Lightbulb,
   LineChart,
+  ListChecks,
   Settings,
   TerminalSquare,
   Target,
@@ -28,7 +29,9 @@ const navItems = [
   { href: "/demand-discovery", labelKey: "nav.demandDiscovery", icon: Lightbulb },
   { href: "/results", labelKey: "nav.results", icon: LineChart },
   { href: "/outcomes", labelKey: "nav.outcomes", icon: LineChart },
+  { href: "/experiments", labelKey: "nav.experiments", icon: LineChart },
   { href: "/codex-tasks", labelKey: "nav.codexTasks", icon: TerminalSquare },
+  { href: "/operations", labelKey: "nav.operations", icon: ListChecks },
   { href: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 

@@ -1,5 +1,8 @@
 # `/pairs/[pairId]`
 
+> **履歴UI資料:** このページ文書は初期UI監査時点の記録です。現在の画面・接続状態は [`../adflow-ai-current-state.md`](../adflow-ai-current-state.md) を参照してください。
+
+
 ## 目的
 
 広告LPペアの分析、Demand Intelligence、AI比較、Outcome、履歴、LP version、AIレビューを統合表示する最重要詳細画面。

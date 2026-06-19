@@ -1,5 +1,7 @@
 # AdFlow AI 料金システム監査・再設計案
 
+> **履歴資料:** 本書は初期の料金設計監査です。現在のStripe・Credit実装状態は [`adflow-ai-current-state.md`](adflow-ai-current-state.md) と [`phase1-audit-report.md`](phase1-audit-report.md) を参照してください。
+
 このドキュメントは、AdFlow AI の料金体系を変更する前に、現在のクレジット設計、API 原価、利益率、価格上のリスクを整理した調査資料です。
 
 ChatGPT や外部レビュアーへ共有し、料金設計を検討するための判断材料として利用できます。

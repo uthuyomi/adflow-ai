@@ -18,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { XAdsOperationsPanel } from "@/components/x-ads/XAdsOperationsPanel";
 import { useAdABTestMutations, useAdABTests } from "@/hooks/use-ad-ab-tests";
+import { showActionableError } from "@/lib/api/errors";
 import { useAdLpPairs } from "@/hooks/use-ad-lp-pairs";
 import { useChangeHistory } from "@/hooks/use-change-history";
 import { useI18n } from "@/hooks/use-i18n";
@@ -152,7 +153,7 @@ export default function AdOptimizationProjectPage() {
                 await abTestMutations.create.mutateAsync(payload);
                 toast.success(t("abTests.created"));
               } catch (caught) {
-                toast.error(caught instanceof Error ? caught.message : t("abTests.createFailed"));
+                showActionableError(caught, t("abTests.createFailed"), t("pricing.choosePlan"));
               }
             }}
             onStatus={async (testId, status) => {
@@ -458,9 +459,10 @@ function ABTestCard({
           </div>
         ) : null}
         <div className="flex flex-wrap justify-end gap-2">
-          {test.status === "draft" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "running")} size="sm">{t("abTests.start")}</Button> : null}
-          {test.status === "running" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "completed")} size="sm">{t("abTests.complete")}</Button> : null}
-          {test.status !== "archived" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "archived")} size="sm" variant="outline">{t("abTests.archive")}</Button> : null}
+          {test.status === "DRAFT" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "READY")} size="sm">{t("abTests.start")}</Button> : null}
+          {test.status === "READY" ? <Button disabled={disabled} onClick={() => onStatus(test.id, "RUNNING")} size="sm">{t("abTests.start")}</Button> : null}
+          {test.status === "RUNNING" || test.status === "PAUSED" ? <Button asChild size="sm"><Link href={`/experiments/${test.id}`}>{t("abTests.complete")}</Link></Button> : null}
+          {["DRAFT", "READY", "PAUSED", "FAILED", "COMPLETED"].includes(test.status) ? <Button disabled={disabled} onClick={() => onStatus(test.id, "ARCHIVED")} size="sm" variant="outline">{t("abTests.archive")}</Button> : null}
         </div>
       </CardContent>
     </Card>

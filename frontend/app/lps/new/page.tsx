@@ -14,6 +14,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { useLandingPageMutations } from "@/hooks/use-landing-pages";
 import { useProjects } from "@/hooks/use-projects";
 import { importLandingPageFromUrl } from "@/lib/api/product";
+import { showActionableError } from "@/lib/api/errors";
 
 export default function NewLpPage() {
   const { t } = useI18n();
@@ -44,7 +45,7 @@ export default function NewLpPage() {
       toast.success(t("lpImport.imported"));
       router.push(destination);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("lpImport.importFailed"));
+      showActionableError(error, t("lpImport.importFailed"), t("pricing.choosePlan"));
     } finally {
       setIsImporting(false);
     }
@@ -56,7 +57,7 @@ export default function NewLpPage() {
       toast.success(t("lpImport.manualCreated"));
       router.push(destination);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("lpImport.manualCreateFailed"));
+      showActionableError(error, t("lpImport.manualCreateFailed"), t("pricing.choosePlan"));
     }
   };
 

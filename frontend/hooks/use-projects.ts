@@ -2,13 +2,14 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createEntity, deleteEntity, getEntityById, listEntities, updateEntity } from "@/lib/supabase/adflow-repository";
+import { createWorkspaceProject, duplicateWorkspaceProject, listWorkspaceProjects, updateWorkspaceProject } from "@/lib/api/operations";
+import { getEntityById } from "@/lib/supabase/adflow-repository";
 import type { AdProject } from "@/lib/types/adflow";
 
 const key = ["ad-projects"];
 
 export function useProjects() {
-  return useQuery({ queryKey: key, queryFn: () => listEntities("ad_projects") });
+  return useQuery({ queryKey: key, queryFn: () => listWorkspaceProjects() });
 }
 
 export function useProject(projectId: string) {
@@ -24,16 +25,20 @@ export function useProjectMutations() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: key });
   return {
     create: useMutation({
-      mutationFn: (payload: Partial<AdProject>) => createEntity("ad_projects", payload),
+      mutationFn: (payload: Partial<AdProject>) => createWorkspaceProject({ name: payload.name ?? "", description: payload.description }),
       onSuccess: invalidate,
     }),
     update: useMutation({
       mutationFn: ({ id, payload }: { id: string; payload: Partial<AdProject> }) =>
-        updateEntity("ad_projects", id, payload),
+        updateWorkspaceProject(id, payload),
       onSuccess: invalidate,
     }),
     remove: useMutation({
-      mutationFn: (id: string) => deleteEntity("ad_projects", id),
+      mutationFn: (id: string) => updateWorkspaceProject(id, { status: "DELETED" }),
+      onSuccess: invalidate,
+    }),
+    duplicate: useMutation({
+      mutationFn: (id: string) => duplicateWorkspaceProject(id),
       onSuccess: invalidate,
     }),
   };

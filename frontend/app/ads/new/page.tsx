@@ -15,6 +15,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { useProjects } from "@/hooks/use-projects";
 import { useTwitterAdMutations } from "@/hooks/use-twitter-ads";
 import { useXAdsAccounts, useXAdsConnections, useXAdsMutations } from "@/hooks/use-x-ads";
+import { showActionableError } from "@/lib/api/errors";
 
 export default function NewAdPage() {
   const { t } = useI18n();
@@ -57,7 +58,7 @@ export default function NewAdPage() {
       const result = await xAdsMutations.startOAuth.mutateAsync({ label: "X Ads", return_path: returnPath });
       window.location.assign(result.authorization_url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("xAds.operationFailed"));
+      showActionableError(error, t("xAds.operationFailed"), t("pricing.choosePlan"));
     }
   }
 
@@ -94,7 +95,7 @@ export default function NewAdPage() {
       toast.success(t("adsImport.manualCreated"));
       router.push(projectId ? `/ad-optimization/${projectId}` : "/ads");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("adsImport.manualCreateFailed"));
+      showActionableError(error, t("adsImport.manualCreateFailed"), t("pricing.choosePlan"));
     }
   }
 

@@ -23,6 +23,8 @@ const protectedRoots = [
   "/prs",
   "/codex-tasks",
   "/outcomes",
+  "/experiments",
+  "/operations",
   "/settings",
 ];
 

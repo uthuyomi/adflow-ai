@@ -25,6 +25,7 @@ import { useDemandEvidence, useDemandMarketSize, useDemandOutcomeLearning, useDe
 import { useAIAgentDecision, useAIAgentResults, useGenerateCodexTask } from "@/hooks/use-orchestration";
 import { useI18n } from "@/hooks/use-i18n";
 import { useUiStore } from "@/lib/store";
+import { showActionableError } from "@/lib/api/errors";
 import type { AIAgentResult, AIHistoryBasedRecommendation, DemandIntelligenceRun, DemandIntelligenceSignal, DemandIntelligenceSummary, DemandMarketSizeEstimate, DemandOutcomeLearningLink, DemandSearchSignal, DemandSignalSnapshot, DemandSignalValidation, DemandSolutionFit, DemandSourceRun, ImprovementOutcome, ImprovementOutcomeStatus, JsonRecord, LandingPageVersion } from "@/lib/types/adflow";
 
 export default function PairDetailPage() {
@@ -65,7 +66,7 @@ export default function PairDetailPage() {
       await run.mutateAsync(aiMode);
       toast.success("Analysis completed.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Analysis failed.");
+      showActionableError(error, "Analysis failed.", t("pricing.choosePlan"));
     }
   };
 

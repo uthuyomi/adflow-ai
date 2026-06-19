@@ -72,6 +72,27 @@ class SupabaseRepository:
         self._raise(response, f"Supabase select failed for {table}")
         return response.json()
 
+    def count(
+        self,
+        table: str,
+        *,
+        user_id: str,
+        filters: dict[str, Any] | None = None,
+    ) -> int:
+        params: dict[str, Any] = {"select": "id", "user_id": f"eq.{user_id}", "limit": "0"}
+        for key, value in (filters or {}).items():
+            params[key] = f"eq.{value}"
+        response = requests.get(
+            f"{self.supabase_url}/rest/v1/{table}",
+            headers={**self._headers(), "Prefer": "count=exact"},
+            params=params,
+            timeout=30,
+        )
+        self._raise(response, f"Supabase count failed for {table}")
+        content_range = response.headers.get("Content-Range", "")
+        total = content_range.rsplit("/", 1)[-1]
+        return int(total) if total.isdigit() else 0
+
     def get_related_many(
         self,
         table: str,
@@ -141,6 +162,16 @@ class SupabaseRepository:
         self._raise(response, f"Supabase update failed for {table}")
         rows = response.json()
         return rows[0] if rows else payload
+
+    def delete(self, table: str, *, user_id: str, filters: dict[str, Any]) -> None:
+        params = {"user_id": f"eq.{user_id}", **{key: f"eq.{value}" for key, value in filters.items()}}
+        response = requests.delete(
+            f"{self.supabase_url}/rest/v1/{table}",
+            headers=self._headers(),
+            params=params,
+            timeout=30,
+        )
+        self._raise(response, f"Supabase delete failed for {table}")
 
     def create_improvement_outcome(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.insert("improvement_outcomes", payload)

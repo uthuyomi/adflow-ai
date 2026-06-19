@@ -17,6 +17,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { useLandingPages } from "@/hooks/use-landing-pages";
 import { useProjects } from "@/hooks/use-projects";
 import { useTwitterAds } from "@/hooks/use-twitter-ads";
+import { showActionableError } from "@/lib/api/errors";
 
 export default function NewPairPage() {
   const { t } = useI18n();
@@ -46,7 +47,7 @@ export default function NewPairPage() {
       toast.success(t("pairCreate.created"));
       router.push(`/ad-optimization/${projectId}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("pairCreate.createFailed"));
+      showActionableError(error, t("pairCreate.createFailed"), t("pricing.choosePlan"));
     }
   };
 

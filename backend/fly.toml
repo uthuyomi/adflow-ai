@@ -6,14 +6,17 @@ primary_region = "nrt"
 
 [env]
   PORT = "8080"
+  ADFLOW_ENV = "production"
   ADFLOW_AI_PROVIDER = "openai"
   ADFLOW_GITHUB_PROVIDER = "memory"
   ADFLOW_STORAGE_PROVIDER = "supabase"
   ADFLOW_SUPABASE_TABLE = "adflow_runs"
-  DEMAND_SYNTHETIC_FALLBACK = "true"
+  DEMAND_SYNTHETIC_FALLBACK = "false"
   DEMAND_REAL_SOURCES_ENABLED = "true"
   GITHUB_SYNC_ENABLED = "true"
   GITHUB_SYNC_INTERVAL_SECONDS = "300"
+  ADFLOW_EXPERIMENT_SYNC_ENABLED = "true"
+  ADFLOW_EXPERIMENT_SYNC_INTERVAL_SECONDS = "3600"
 
 [http_service]
   internal_port = 8080
@@ -28,7 +31,7 @@ primary_region = "nrt"
     timeout = "5s"
     grace_period = "10s"
     method = "GET"
-    path = "/health"
+    path = "/ready"
 
 [[vm]]
   memory = "1gb"

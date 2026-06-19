@@ -1,64 +1,44 @@
 # AdFlow AI UI Page Inventory
 
-このディレクトリは、AdFlow AI の各ページで「現在UIに何が表示されるか」をページ単位で分けて記録したレビュー用ドキュメントです。
+このディレクトリの個別ページ文書は初期UI監査の履歴資料です。現在の実装状態は [`../adflow-ai-current-state.md`](../adflow-ai-current-state.md) を正本として参照してください。
 
-目的:
+## 現在の主要ルート
 
-- UIレビュー
-- UXレビュー
-- コピー/ラベルレビュー
-- オンボーディングレビュー
-- コンバージョン導線レビュー
+### 公開ページ
 
-注意:
+- `/`
+- `/features`
+- `/how-it-works`
+- `/compare`
+- `/why-adflow`
+- `/use-cases`
+- `/faq`
+- `/pricing`
+- `/contact`
+- `/changelog`
+- `/login`
+- `/legal`, `/legal/terms`, `/legal/privacy`, `/legal/tokusho`
+- `/billing/success`, `/billing/cancel`
 
-- 内容は現在の実装とi18n辞書を基にした表示インベントリです。
-- スクリーンショットはリポジトリ内に未確認です。
-- 一部の管理画面には英語固定文言が残っています。
-- 動的詳細ページは、データが存在する場合と空状態の両方を記載しています。
+### 認証後ページ
 
-## ページ一覧
+- `/dashboard`
+- `/projects`, `/projects/[projectId]`
+- `/demand-discovery`
+- `/ad-optimization`, `/ad-optimization/[projectId]`
+- `/ads`, `/ads/new`, `/ads/[adId]/edit`
+- `/lps`, `/lps/new`, `/lps/[lpId]/edit`, `/lp`
+- `/pairs`, `/pairs/new`, `/pairs/[pairId]`, `/pairs/[pairId]/edit`
+- `/improvements`, `/improvements/[improvementId]`
+- `/orchestration`
+- `/codex-tasks`, `/codex-tasks/[taskId]`
+- `/prs`
+- `/outcomes`, `/outcomes/[outcomeId]`
+- `/experiments`, `/experiments/[experimentId]`
+- `/operations`
+- `/results`
+- `/history`
+- `/campaigns`, `/campaigns/[campaignId]`
+- `/settings`
 
-| Route | File |
-| --- | --- |
-| `/` | [home.md](home.md) |
-| `/pricing` | [pricing.md](pricing.md) |
-| `/features` | [features.md](features.md) |
-| `/how-it-works` | [how-it-works.md](how-it-works.md) |
-| `/compare` | [compare.md](compare.md) |
-| `/why-adflow` | [why-adflow.md](why-adflow.md) |
-| `/use-cases` | [use-cases.md](use-cases.md) |
-| `/faq` | [faq.md](faq.md) |
-| `/contact` | [contact.md](contact.md) |
-| `/changelog` | [changelog.md](changelog.md) |
-| `/login` | [login.md](login.md) |
-| `/dashboard` | [dashboard.md](dashboard.md) |
-| `/projects` | [projects.md](projects.md) |
-| `/projects/[projectId]` | [project-detail.md](project-detail.md) |
-| `/ads` | [ads.md](ads.md) |
-| `/ads/new` | [ads-new.md](ads-new.md) |
-| `/ads/[adId]/edit` | [ads-edit.md](ads-edit.md) |
-| `/lps` | [lps.md](lps.md) |
-| `/lps/new` | [lps-new.md](lps-new.md) |
-| `/lps/[lpId]/edit` | [lps-edit.md](lps-edit.md) |
-| `/lp` | [lp-analysis.md](lp-analysis.md) |
-| `/pairs` | [pairs.md](pairs.md) |
-| `/pairs/new` | [pairs-new.md](pairs-new.md) |
-| `/pairs/[pairId]` | [pair-detail.md](pair-detail.md) |
-| `/pairs/[pairId]/edit` | [pairs-edit.md](pairs-edit.md) |
-| `/history` | [history.md](history.md) |
-| `/orchestration` | [orchestration.md](orchestration.md) |
-| `/campaigns` | [campaigns.md](campaigns.md) |
-| `/campaigns/[campaignId]` | [campaign-detail.md](campaign-detail.md) |
-| `/improvements` | [improvements.md](improvements.md) |
-| `/improvements/[improvementId]` | [improvement-detail.md](improvement-detail.md) |
-| `/prs` | [prs.md](prs.md) |
-| `/settings` | [settings.md](settings.md) |
-| `/billing/success` | [billing-success.md](billing-success.md) |
-| `/billing/cancel` | [billing-cancel.md](billing-cancel.md) |
-| `/legal` | [legal.md](legal.md) |
-| `/terms` | [terms.md](terms.md) |
-| `/privacy` | [privacy.md](privacy.md) |
-| `/legal/terms` | [legal-terms.md](legal-terms.md) |
-| `/legal/privacy` | [legal-privacy.md](legal-privacy.md) |
-| `/legal/tokusho` | [legal-tokusho.md](legal-tokusho.md) |
+個別文書が存在しない追加画面は、Phase4〜8で追加された画面です。
