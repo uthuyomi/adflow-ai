@@ -1,70 +1,122 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hmac
+import hashlib
 import secrets
 from typing import Any
 from urllib.parse import urlencode
 
-import requests
-
+from backend.services.github.github_app_auth import GitHubAppAuth
 from backend.services.github.github_api_client import GitHubAPIClient
 from backend.services.improvements.improvement_workflow_service import ImprovementWorkflowService
 from backend.services.supabase.supabase_repository import SupabaseRepository
-from backend.services.x_ads.token_cipher import TokenCipher
 
 
 class GitHubIntegrationService:
-    def __init__(self, repository: SupabaseRepository, encryption_key: str | None, *, oauth_client_id: str | None = None, oauth_client_secret: str | None = None, oauth_callback_url: str | None = None, frontend_url: str = "http://localhost:3000") -> None:
+    def __init__(
+        self,
+        repository: SupabaseRepository,
+        *,
+        app_id: str | None = None,
+        private_key: str | None = None,
+        client_id: str | None = None,
+        webhook_secret: str | None = None,
+        callback_url: str | None = None,
+        frontend_url: str = "http://localhost:3000",
+    ) -> None:
         self.repository = repository
-        self.cipher = TokenCipher(encryption_key)
-        self.oauth_client_id, self.oauth_client_secret, self.oauth_callback_url = oauth_client_id, oauth_client_secret, oauth_callback_url
+        self.auth = GitHubAppAuth(app_id=app_id, private_key=private_key, client_id=client_id)
+        self.webhook_secret = webhook_secret or ""
+        self.callback_url = callback_url or ""
         self.frontend_url = frontend_url.rstrip("/")
 
-    def start_oauth(self, *, user_id: str, return_path: str = "/settings") -> dict[str, str]:
-        if not self.oauth_client_id or not self.oauth_callback_url:
-            raise ValueError("GitHub OAuth is not configured.")
+    def start_installation(self, *, user_id: str, return_path: str = "/settings") -> dict[str, str]:
+        if not self.auth.configured or not self.callback_url:
+            raise ValueError("GitHub App is not configured.")
         state = secrets.token_urlsafe(32)
         safe_path = return_path if return_path.startswith("/") else "/settings"
-        self.repository.insert("github_oauth_sessions", {"user_id": user_id, "state": state, "return_path": safe_path, "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()})
-        return {"authorization_url": "https://github.com/login/oauth/authorize?" + urlencode({"client_id": self.oauth_client_id, "redirect_uri": self.oauth_callback_url, "scope": "repo read:user", "state": state})}
+        self.repository.insert(
+            "github_app_install_sessions",
+            {
+                "user_id": user_id,
+                "state": state,
+                "return_path": safe_path,
+                "status": "pending",
+                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+            },
+        )
+        slug = str(self.auth.get_app()["slug"])
+        return {
+            "authorization_url": f"https://github.com/apps/{slug}/installations/new?"
+            + urlencode({"state": state})
+        }
 
-    def complete_oauth(self, *, code: str | None, state: str | None) -> str:
-        if not code or not state or not self.oauth_client_id or not self.oauth_client_secret:
+    def complete_installation(self, *, installation_id: int | None, state: str | None, setup_action: str | None = None) -> str:
+        if not installation_id or not state or not self.auth.configured:
             return f"{self.frontend_url}/settings?github=failed"
-        sessions = self.repository.get_related_many("github_oauth_sessions", filters={"state": state}, limit=1)
+        sessions = self.repository.get_related_many("github_app_install_sessions", filters={"state": state}, limit=1)
         if not sessions or sessions[0].get("status") != "pending":
             return f"{self.frontend_url}/settings?github=invalid_session"
         session = sessions[0]
         expires_at = datetime.fromisoformat(str(session["expires_at"]).replace("Z", "+00:00"))
         if expires_at <= datetime.now(timezone.utc):
-            self.repository.update("github_oauth_sessions", user_id=session["user_id"], filters={"id": session["id"]}, payload={"status": "expired"})
+            self.repository.update("github_app_install_sessions", user_id=session["user_id"], filters={"id": session["id"]}, payload={"status": "expired"})
             return f"{self.frontend_url}{session['return_path']}?github=expired"
-        response = requests.post("https://github.com/login/oauth/access_token", headers={"Accept": "application/json"}, json={"client_id": self.oauth_client_id, "client_secret": self.oauth_client_secret, "code": code, "redirect_uri": self.oauth_callback_url}, timeout=30)
-        token = response.json().get("access_token")
-        if not token:
+        if setup_action not in {None, "install", "update"}:
+            self.repository.update("github_app_install_sessions", user_id=session["user_id"], filters={"id": session["id"]}, payload={"status": "failed"})
             return f"{self.frontend_url}{session['return_path']}?github=failed"
-        self.connect_token(user_id=session["user_id"], token=token)
-        self.repository.update("github_oauth_sessions", user_id=session["user_id"], filters={"id": session["id"]}, payload={"status": "completed"})
+        try:
+            self._save_installation(user_id=session["user_id"], installation_id=installation_id)
+        except ValueError:
+            self.repository.update("github_app_install_sessions", user_id=session["user_id"], filters={"id": session["id"]}, payload={"status": "failed"})
+            return f"{self.frontend_url}{session['return_path']}?github=already_linked"
+        self.repository.update("github_app_install_sessions", user_id=session["user_id"], filters={"id": session["id"]}, payload={"status": "completed"})
         return f"{self.frontend_url}{session['return_path']}?github=connected"
 
-    def connect_token(self, *, user_id: str, token: str) -> dict[str, Any]:
-        client = GitHubAPIClient(token)
-        profile = client.get("/user")
-        payload = {
-            "github_login": profile["login"],
-            "encrypted_access_token": self.cipher.encrypt(token), "scopes": ["repo"], "status": "active",
-            "last_verified_at": _now(), "last_error": None,
-        }
-        existing = self.repository.get_many(
-            "github_connections",
+    def claim_available_installation(self, *, user_id: str) -> dict[str, Any]:
+        pending = self.repository.get_many(
+            "github_app_install_sessions",
             user_id=user_id,
-            filters={"github_user_id": str(profile["id"])},
-            limit=1,
+            filters={"status": "pending"},
+            order="created_at.desc",
+            limit=10,
         )
-        connection = (
-            self.repository.update("github_connections", user_id=user_id, filters={"id": existing[0]["id"]}, payload=payload)
-            if existing
-            else self.repository.insert("github_connections", {"user_id": user_id, "github_user_id": str(profile["id"]), **payload})
+        now = datetime.now(timezone.utc)
+        pending = [
+            row
+            for row in pending
+            if datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00")) > now
+        ]
+        if len(pending) != 1:
+            raise ValueError("Exactly one active GitHub App installation session is required.")
+
+        linked_ids = {
+            int(row["installation_id"])
+            for row in self.repository.get_related_many(
+                "github_connections",
+                filters={"auth_type": "GITHUB_APP"},
+                limit=1000,
+            )
+            if row.get("installation_id")
+        }
+        available = [
+            installation
+            for installation in self.auth.app_client().get("/app/installations?per_page=100")
+            if int(installation["id"]) not in linked_ids and not installation.get("suspended_at")
+        ]
+        if len(available) != 1:
+            raise ValueError("Exactly one unlinked GitHub App installation is required.")
+
+        connection = self._save_installation(
+            user_id=user_id,
+            installation_id=int(available[0]["id"]),
+        )
+        self.repository.update(
+            "github_app_install_sessions",
+            user_id=user_id,
+            filters={"id": pending[0]["id"]},
+            payload={"status": "completed"},
         )
         return self._public_connection(connection)
 
@@ -72,19 +124,35 @@ class GitHubIntegrationService:
         return [self._public_connection(row) for row in self.repository.get_many("github_connections", user_id=user_id, order="created_at.desc")]
 
     def revoke(self, *, user_id: str, connection_id: str) -> dict[str, Any]:
-        row = self.repository.update("github_connections", user_id=user_id, filters={"id": connection_id}, payload={"status": "revoked"})
+        connection = self.repository.get_one("github_connections", user_id=user_id, filters={"id": connection_id})
+        if connection.get("auth_type") == "GITHUB_APP" and connection.get("installation_id"):
+            self.auth.delete_installation(int(connection["installation_id"]))
+        row = self.repository.update(
+            "github_connections",
+            user_id=user_id,
+            filters={"id": connection_id},
+            payload={"status": "revoked", "last_verified_at": _now()},
+        )
         return self._public_connection(row)
 
     def list_repositories(self, *, user_id: str, connection_id: str) -> list[dict[str, Any]]:
-        return [self._public_repo(row) for row in self._client(user_id, connection_id).list_repositories() if not row.get("archived") and not row.get("disabled")]
+        connection = self._connection(user_id, connection_id)
+        client = self._client_for_connection(connection)
+        can_push = self._installation_can_write_contents(connection)
+        return [
+            self._public_repo(row, can_push=can_push)
+            for row in client.list_repositories()
+            if not row.get("archived") and not row.get("disabled")
+        ]
 
     def list_branches(self, *, user_id: str, connection_id: str, repository: str) -> list[dict[str, Any]]:
         return self._client(user_id, connection_id).get(f"/repos/{repository}/branches?per_page=100")
 
     def select_repository(self, *, user_id: str, connection_id: str, repository: str) -> dict[str, Any]:
-        client = self._client(user_id, connection_id)
+        connection = self._connection(user_id, connection_id)
+        client = self._client_for_connection(connection)
         repo = client.get(f"/repos/{repository}")
-        permission = str((repo.get("permissions") or {}).get("push") and "push" or "read")
+        permission = "push" if self._installation_can_write_contents(connection) else "read"
         if permission != "push":
             raise ValueError("GitHub repository push permission is required.")
         existing = self.repository.get_many("github_repository_selections", user_id=user_id, filters={"repository_full_name": repository}, limit=1)
@@ -128,7 +196,8 @@ class GitHubIntegrationService:
         try:
             client = self._client(user_id, selection["connection_id"])
             repo = client.get(f"/repos/{selection['repository_full_name']}")
-            if not (repo.get("permissions") or {}).get("push"):
+            connection = self._connection(user_id, selection["connection_id"])
+            if not self._installation_can_write_contents(connection):
                 raise ValueError("GitHub repository push permission is required.")
             base = client.get(f"/repos/{selection['repository_full_name']}/git/ref/heads/{selection['default_branch']}")
             base_sha = base["object"]["sha"]
@@ -211,13 +280,123 @@ class GitHubIntegrationService:
         return {"total": len(records), "synced": synced, "failed": failed}
 
     def configuration(self) -> dict[str, bool]:
-        return {"oauth_enabled": bool(self.oauth_client_id and self.oauth_client_secret and self.oauth_callback_url)}
+        return {"app_enabled": bool(self.auth.configured and self.callback_url)}
 
     def _client(self, user_id: str, connection_id: str) -> GitHubAPIClient:
-        connection = self.repository.get_one("github_connections", user_id=user_id, filters={"id": connection_id})
+        return self._client_for_connection(self._connection(user_id, connection_id))
+
+    def _connection(self, user_id: str, connection_id: str) -> dict[str, Any]:
+        return self.repository.get_one("github_connections", user_id=user_id, filters={"id": connection_id})
+
+    def _client_for_connection(self, connection: dict[str, Any]) -> GitHubAPIClient:
         if connection.get("status") != "active":
             raise ValueError("GitHub connection is not active.")
-        return GitHubAPIClient(self.cipher.decrypt(connection["encrypted_access_token"]))
+        if connection.get("auth_type") != "GITHUB_APP" or not connection.get("installation_id"):
+            raise ValueError("This GitHub connection must be reinstalled as a GitHub App.")
+        return self.auth.installation_client(int(connection["installation_id"]))
+
+    def _installation_can_write_contents(self, connection: dict[str, Any]) -> bool:
+        installation = self.auth.get_installation(int(connection["installation_id"]))
+        return str((installation.get("permissions") or {}).get("contents") or "").lower() == "write"
+
+    def _save_installation(self, *, user_id: str, installation_id: int) -> dict[str, Any]:
+        installation = self.auth.get_installation(installation_id)
+        linked = self.repository.get_related_many(
+            "github_connections",
+            filters={"installation_id": installation_id},
+            limit=1,
+        )
+        if linked and linked[0].get("user_id") != user_id:
+            raise ValueError("GitHub App installation is already linked to another user.")
+        account = installation.get("account") or {}
+        payload = {
+            "auth_type": "GITHUB_APP",
+            "installation_id": installation_id,
+            "account_id": str(account.get("id") or ""),
+            "account_login": str(account.get("login") or ""),
+            "account_type": str(account.get("type") or ""),
+            "github_user_id": str(account.get("id") or ""),
+            "github_login": str(account.get("login") or ""),
+            "repository_selection_mode": installation.get("repository_selection"),
+            "installed_at": _now(),
+            "suspended_at": installation.get("suspended_at"),
+            "status": "active" if not installation.get("suspended_at") else "invalid",
+            "last_verified_at": _now(),
+            "last_error": None,
+            "encrypted_access_token": None,
+            "scopes": ["contents:write", "metadata:read", "pull_requests:write"],
+        }
+        existing = self.repository.get_many(
+            "github_connections",
+            user_id=user_id,
+            filters={"installation_id": installation_id},
+            limit=1,
+        )
+        if existing:
+            return self.repository.update(
+                "github_connections",
+                user_id=user_id,
+                filters={"id": existing[0]["id"]},
+                payload=payload,
+            )
+        return self.repository.insert("github_connections", {"user_id": user_id, **payload})
+
+    def installation_token_for_selection(self, *, user_id: str, repository_selection_id: str) -> tuple[dict[str, Any], str]:
+        selection = self.repository.get_one(
+            "github_repository_selections",
+            user_id=user_id,
+            filters={"id": repository_selection_id},
+        )
+        connection = self.repository.get_one(
+            "github_connections",
+            user_id=user_id,
+            filters={"id": selection["connection_id"]},
+        )
+        if connection.get("auth_type") != "GITHUB_APP" or connection.get("status") != "active":
+            raise ValueError("An active GitHub App installation is required.")
+        token = self.auth.create_installation_token(int(connection["installation_id"])).token
+        return selection, token
+
+    def handle_webhook(self, *, body: bytes, signature: str | None, event: str | None) -> dict[str, Any]:
+        if not self.webhook_secret:
+            raise ValueError("GitHub webhook is not configured.")
+        expected = "sha256=" + hmac.new(self.webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+        if not signature or not hmac.compare_digest(expected, signature):
+            raise ValueError("Invalid GitHub webhook signature.")
+        import json
+
+        payload = json.loads(body.decode("utf-8"))
+        installation_id = (payload.get("installation") or {}).get("id")
+        if event == "installation" and installation_id:
+            rows = self.repository.get_related_many("github_connections", filters={"installation_id": installation_id}, limit=10)
+            action = payload.get("action")
+            for row in rows:
+                status = "revoked" if action == "deleted" else ("invalid" if action == "suspend" else "active")
+                self.repository.update(
+                    "github_connections",
+                    user_id=row["user_id"],
+                    filters={"id": row["id"]},
+                    payload={"status": status, "suspended_at": _now() if status == "invalid" else None, "last_verified_at": _now()},
+                )
+        elif event == "installation_repositories" and installation_id:
+            rows = self.repository.get_related_many("github_connections", filters={"installation_id": installation_id}, limit=10)
+            removed = {str(repo.get("full_name") or "") for repo in payload.get("repositories_removed") or []}
+            for row in rows:
+                selections = self.repository.get_many(
+                    "github_repository_selections",
+                    user_id=row["user_id"],
+                    filters={"connection_id": row["id"]},
+                    limit=500,
+                )
+                for selection in selections:
+                    if selection.get("repository_full_name") in removed:
+                        self.repository.update(
+                            "github_repository_selections",
+                            user_id=row["user_id"],
+                            filters={"id": selection["id"]},
+                            payload={"status": "missing", "last_verified_at": _now(), "last_error": "Repository removed from GitHub App installation."},
+                        )
+        return {"accepted": True}
 
     def _event(self, user_id: str, record: dict[str, Any], event_type: str, error: str | None = None) -> None:
         self.repository.insert("github_pr_events", {"user_id": user_id, "github_pull_request_id": record["id"], "improvement_id": record["improvement_id"], "repository": record["repository"], "branch": record.get("branch_name"), "commit_sha": record.get("commit_sha"), "pr_number": record.get("pr_number"), "pr_url": record.get("pr_url"), "created_by": user_id, "status": record["status"], "event_type": event_type, "error_message": error})
@@ -230,11 +409,17 @@ class GitHubIntegrationService:
 
     @staticmethod
     def _public_connection(row: dict[str, Any]) -> dict[str, Any]:
-        return {key: value for key, value in row.items() if key != "encrypted_access_token"}
+        public = {key: value for key, value in row.items() if key != "encrypted_access_token"}
+        if public.get("auth_type") != "GITHUB_APP":
+            public["migration_required"] = True
+        return public
 
     @staticmethod
-    def _public_repo(row: dict[str, Any]) -> dict[str, Any]:
-        return {"id": str(row["id"]), "full_name": row["full_name"], "default_branch": row["default_branch"], "permissions": row.get("permissions") or {}, "archived": row.get("archived", False)}
+    def _public_repo(row: dict[str, Any], *, can_push: bool | None = None) -> dict[str, Any]:
+        permissions = dict(row.get("permissions") or {})
+        if can_push is not None:
+            permissions["push"] = can_push
+        return {"id": str(row["id"]), "full_name": row["full_name"], "default_branch": row["default_branch"], "permissions": permissions, "archived": row.get("archived", False)}
 
 
 def _now() -> str:

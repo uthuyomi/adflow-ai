@@ -201,7 +201,7 @@ FAILED -> APPLY_READY
 Production上の制限:
 
 - Backend DockerfileはCodex CLIをインストールしていない
-- `CODEX_WORKSPACE`としてgit repositoryが必要
+- REAL_EXECUTIONはGitHub Appで選択されたRepositoryをタスクごとの一時領域へcloneする。共有`CODEX_WORKSPACE`は使用しない
 - git credentialsと実行sandbox方針が必要
 - したがって現状Productionで確実に提供できるのはMANUAL_EXECUTION
 
@@ -224,7 +224,7 @@ Production上の制限:
 
 注意:
 
-- `backend/fly.toml`の既定値は`ADFLOW_GITHUB_PROVIDER=memory`
+- `backend/fly.toml`の既定値は`ADFLOW_GITHUB_PROVIDER=github_app`
 - Productionで実GitHubを提供する場合は`github` providerと実認証情報の確認が必要
 - Productionで実Repositoryを使った最終受入試験が必要
 

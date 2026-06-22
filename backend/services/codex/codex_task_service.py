@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
 import threading
 from typing import Any
-from uuid import uuid4
 
 from backend.core.config import Settings
 from backend.services.billing.credits import CREDIT_COSTS, CreditService
+from backend.services.codex.isolated_workspace import IsolatedWorkspaceManager
 from backend.services.github.github_integration_service import GitHubIntegrationService
 from backend.services.orchestration.ai_orchestrator import AIOrchestrator
 from backend.services.outcomes.improvement_outcome_service import ImprovementOutcomeService
@@ -95,61 +95,97 @@ class CodexTaskService:
             return {"task": self._task(user_id, task_id), "execution": execution}
         return self._finish_execution(user_id=user_id, task_id=task_id, execution=execution, succeeded=succeeded, summary=summary, stdout=stdout, stderr=stderr, files_changed=files_changed, diff_summary=diff_summary, error_code=error_code)
 
-    def execute_real(self, *, user_id: str, task_id: str, idempotency_key: str) -> dict[str, Any]:
+    def execute_real(
+        self,
+        *,
+        user_id: str,
+        task_id: str,
+        idempotency_key: str,
+        repository_selection_id: str | None = None,
+    ) -> dict[str, Any]:
         task = self._task(user_id, task_id)
-        workspace = Path(self.settings.codex_workspace or "").resolve()
-        if not self.settings.codex_workspace or not workspace.is_dir() or not (workspace / ".git").exists():
-            raise ValueError("REAL_EXECUTION requires CODEX_WORKSPACE pointing to a git repository.")
         if not shutil.which(self.settings.codex_executable):
             raise ValueError("Codex CLI is not available.")
+        if not repository_selection_id:
+            previous = self.repository.get_many(
+                "codex_task_executions",
+                user_id=user_id,
+                filters={"task_id": task_id},
+                order="created_at.desc",
+                limit=1,
+            )
+            repository_selection_id = str(previous[0].get("repository_selection_id") or "") if previous else ""
+        if not repository_selection_id:
+            raise ValueError("A GitHub repository selection is required for REAL_EXECUTION.")
+        github = self._github()
+        selection, installation_token = github.installation_token_for_selection(
+            user_id=user_id,
+            repository_selection_id=repository_selection_id,
+        )
         execution = self._begin_execution(user_id=user_id, task_id=task_id, mode="REAL_EXECUTION", idempotency_key=idempotency_key)
         if execution["status"] in {"SUCCEEDED", "FAILED", "CANCELLED"}:
             return {"task": self._task(user_id, task_id), "execution": execution}
-        temp_root = Path(tempfile.mkdtemp(prefix="adflow-codex-"))
-        temp_dir = temp_root / "worktree"
+        execution = self.repository.update(
+            "codex_task_executions",
+            user_id=user_id,
+            filters={"id": execution["id"]},
+            payload={
+                "repository_selection_id": repository_selection_id,
+                "repository": selection["repository_full_name"],
+                "base_branch": selection["default_branch"],
+                "workspace_strategy": "ISOLATED_CLONE",
+            },
+        )
+        manager = IsolatedWorkspaceManager(
+            root=self.settings.codex_workspace_root,
+            runner_user=self.settings.codex_runner_user,
+        )
+        process: subprocess.Popen[str] | None = None
         try:
-            subprocess.run(
-                ["git", "worktree", "add", "--detach", str(temp_dir), "HEAD"],
-                cwd=workspace,
-                check=True,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            prompt = self._execution_prompt(task)
-            process = subprocess.Popen(
-                [self.settings.codex_executable, "exec", "--ephemeral", "-s", "workspace-write", "-C", str(temp_dir), prompt],
-                cwd=temp_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            with _PROCESS_LOCK:
-                _PROCESSES[task_id] = process
-            stdout, stderr = process.communicate(timeout=self.settings.codex_execution_timeout_seconds)
-            files = self._changed_files(temp_dir)
-            return self._finish_execution(user_id=user_id, task_id=task_id, execution=execution, succeeded=process.returncode == 0, summary="Codex CLI execution completed." if process.returncode == 0 else "Codex CLI execution failed.", stdout=stdout, stderr=stderr, files_changed=files, diff_summary=self._diff_summary(temp_dir), error_code=None if process.returncode == 0 else "CODEX_CLI_FAILED")
+            with manager.clone(
+                repository=selection["repository_full_name"],
+                branch=selection["default_branch"],
+                token=installation_token,
+            ) as workspace:
+                prompt = self._execution_prompt(task)
+                process = subprocess.Popen(
+                    manager.command(self.settings.codex_executable, workspace, prompt),
+                    cwd=workspace.repository,
+                    env=manager.codex_environment(workspace),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                with _PROCESS_LOCK:
+                    _PROCESSES[task_id] = process
+                stdout, stderr = process.communicate(timeout=self.settings.codex_execution_timeout_seconds)
+                files = self._changed_files(workspace.repository)
+                return self._finish_execution(
+                    user_id=user_id,
+                    task_id=task_id,
+                    execution=execution,
+                    succeeded=process.returncode == 0,
+                    summary="Codex CLI execution completed." if process.returncode == 0 else "Codex CLI execution failed.",
+                    stdout=stdout,
+                    stderr=stderr,
+                    files_changed=files,
+                    diff_summary=self._diff_summary(workspace.repository),
+                    error_code=None if process.returncode == 0 else "CODEX_CLI_FAILED",
+                )
         except subprocess.TimeoutExpired:
-            process.kill()
-            stdout, stderr = process.communicate()
+            if process:
+                process.kill()
+                stdout, stderr = process.communicate()
+            else:
+                stdout, stderr = "", "Codex process did not start."
             return self._finish_execution(user_id=user_id, task_id=task_id, execution=execution, succeeded=False, summary="Codex CLI execution timed out.", stdout=stdout, stderr=stderr, files_changed=[], diff_summary=None, error_code="CODEX_TIMEOUT")
         except Exception as exc:
             return self._finish_execution(user_id=user_id, task_id=task_id, execution=execution, succeeded=False, summary="Codex CLI execution failed before completion.", stdout=None, stderr=str(exc), files_changed=[], diff_summary=None, error_code="CODEX_EXECUTION_ERROR")
         finally:
             with _PROCESS_LOCK:
                 _PROCESSES.pop(task_id, None)
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", str(temp_dir)],
-                cwd=workspace,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            shutil.rmtree(temp_root, ignore_errors=True)
 
     def cancel(self, *, user_id: str, task_id: str, reason: str) -> dict[str, Any]:
         task = self._task(user_id, task_id)
@@ -181,7 +217,7 @@ class CodexTaskService:
         cost = CREDIT_COSTS["codex_github_pr"]
         self.credits.consume_idempotent(user_id=user_id, amount=cost.amount, reason=cost.reason, idempotency_key=f"codex-pr:{idempotency_key}", metadata={"task_id": task_id, "execution_id": execution_id})
         try:
-            pr = GitHubIntegrationService(self.repository, self.settings.github_token_encryption_key, oauth_client_id=self.settings.github_oauth_client_id, oauth_client_secret=self.settings.github_oauth_client_secret, oauth_callback_url=self.settings.github_oauth_callback_url, frontend_url=self.settings.frontend_app_url).create_pull_request(
+            pr = self._github().create_pull_request(
                 user_id=user_id, improvement_id=task["source_ai_result_id"], repository_selection_id=repository_selection_id, files=files, codex_task_id=task_id, codex_execution_id=execution_id, title=task["title"]
             )
             updated = self._transition(user_id, task, "PR_CREATED", "GitHub PR created.", execution_id=execution_id, related_pr_id=pr["id"], payload={"pr_url": pr["pr_url"]})
@@ -273,7 +309,7 @@ class CodexTaskService:
     @staticmethod
     def _changed_files(worktree: Path) -> list[dict[str, Any]]:
         output = subprocess.check_output(
-            ["git", "status", "--porcelain"],
+            ["git", "-c", f"safe.directory={worktree}", "status", "--porcelain=v1", "-uall"],
             cwd=worktree,
             text=True,
             encoding="utf-8",
@@ -292,7 +328,7 @@ class CodexTaskService:
     @staticmethod
     def _diff_summary(worktree: Path) -> str:
         status = subprocess.run(
-            ["git", "status", "--short"],
+            ["git", "-c", f"safe.directory={worktree}", "status", "--short"],
             cwd=worktree,
             capture_output=True,
             text=True,
@@ -300,7 +336,7 @@ class CodexTaskService:
             errors="replace",
         ).stdout.strip()
         stat = subprocess.run(
-            ["git", "diff", "--stat"],
+            ["git", "-c", f"safe.directory={worktree}", "diff", "--stat"],
             cwd=worktree,
             capture_output=True,
             text=True,
@@ -310,12 +346,29 @@ class CodexTaskService:
         return "\n".join(part for part in (stat, status) if part)
 
     def configuration(self) -> dict[str, Any]:
-        workspace = Path(self.settings.codex_workspace or "")
         return {
-            "real_execution_enabled": bool(self.settings.codex_workspace and workspace.is_dir() and (workspace / ".git").exists() and shutil.which(self.settings.codex_executable)),
+            "real_execution_enabled": bool(
+                shutil.which(self.settings.codex_executable)
+                and self.settings.github_app_id
+                and self.settings.github_app_private_key
+                and self.settings.github_app_client_id
+                and (os.getenv("CODEX_API_KEY") or os.getenv("CODEX_ACCESS_TOKEN"))
+            ),
             "manual_execution_enabled": True,
             "mock_execution_enabled": False,
+            "workspace_strategy": "ISOLATED_CLONE",
         }
+
+    def _github(self) -> GitHubIntegrationService:
+        return GitHubIntegrationService(
+            self.repository,
+            app_id=self.settings.github_app_id,
+            private_key=self.settings.github_app_private_key,
+            client_id=self.settings.github_app_client_id,
+            webhook_secret=self.settings.github_webhook_secret,
+            callback_url=self.settings.github_app_callback_url,
+            frontend_url=self.settings.frontend_app_url,
+        )
 
 
 def _now() -> str:

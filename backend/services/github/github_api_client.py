@@ -19,11 +19,15 @@ class GitHubAPIClient:
     def patch(self, path: str, payload: dict[str, Any]) -> Any:
         return self._request("PATCH", path, payload)
 
+    def put(self, path: str, payload: dict[str, Any]) -> Any:
+        return self._request("PUT", path, payload)
+
     def delete(self, path: str) -> Any:
         return self._request("DELETE", path)
 
     def list_repositories(self) -> list[dict[str, Any]]:
-        return self.get("/user/repos?per_page=100&sort=updated")
+        response = self.get("/installation/repositories?per_page=100")
+        return list(response.get("repositories") or [])
 
     def create_blob(self, repository: str, content: str) -> str:
         return self.post(f"/repos/{repository}/git/blobs", {"content": base64.b64encode(content.encode()).decode(), "encoding": "base64"})["sha"]

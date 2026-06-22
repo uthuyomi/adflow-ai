@@ -207,10 +207,13 @@ PR_CREATED -> OUTCOME_CREATED
 
 主な画面: `/codex-tasks`, `/codex-tasks/[taskId]`
 
+REAL_EXECUTIONは選択済みRepositoryを実行ごとの一時ディレクトリへcloneし、終了時に削除する。Codex子プロセスにはGitHub、Supabase、Stripe等のsecretsを渡さない。
+
 ### GitHub
 
-- OAuth接続
+- GitHub App installation接続
 - Repository選択と権限確認
+- Installation Access Tokenは都度発行し、長期保存しない
 - `adflow/{improvement_id}`形式のBranch
 - CommitとPull Request作成
 - PR状態同期と監査イベント

@@ -11,7 +11,7 @@ export function useCodexActions(id: string) {
   const refresh = () => { client.invalidateQueries({ queryKey: ["codex-task", id] }); client.invalidateQueries({ queryKey: ["codex-tasks"] }); };
   return {
     manual: useMutation({ mutationFn: (payload: Record<string, unknown>) => executeCodexManual(id, payload), onSuccess: refresh }),
-    real: useMutation({ mutationFn: () => executeCodexReal(id), onSuccess: refresh }),
+    real: useMutation({ mutationFn: (selectionId: string) => executeCodexReal(id, selectionId), onSuccess: refresh }),
     cancel: useMutation({ mutationFn: () => cancelCodexTask(id), onSuccess: refresh }),
     pr: useMutation({ mutationFn: ({ executionId, selectionId }: { executionId: string; selectionId: string }) => createCodexPr(id, executionId, selectionId), onSuccess: refresh }),
     outcome: useMutation({ mutationFn: () => createCodexOutcome(id), onSuccess: refresh }),

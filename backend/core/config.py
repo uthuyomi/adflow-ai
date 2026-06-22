@@ -11,21 +11,23 @@ class Settings(BaseModel):
 
     deployment_environment: Literal["development", "test", "production"] = "development"
     ai_provider: Literal["mock", "openai"] = "mock"
-    github_provider: Literal["memory", "github"] = "memory"
+    github_provider: Literal["memory", "github_app"] = "memory"
     storage_provider: Literal["memory", "supabase"] = "memory"
     openai_model: str | None = None
     openai_deep_model: str | None = None
     github_repository: str | None = None
     github_token: str | None = None
-    github_token_encryption_key: str | None = None
-    github_oauth_client_id: str | None = None
-    github_oauth_client_secret: str | None = None
-    github_oauth_callback_url: str = "http://127.0.0.1:8000/integrations/github/oauth/callback"
+    github_app_id: str | None = None
+    github_app_private_key: str | None = None
+    github_app_client_id: str | None = None
+    github_webhook_secret: str | None = None
+    github_app_callback_url: str = "http://127.0.0.1:8000/integrations/github/app/callback"
     github_sync_enabled: bool = True
     github_sync_interval_seconds: int = Field(default=300, ge=30)
     experiment_sync_enabled: bool = False
     codex_executable: str = "codex"
-    codex_workspace: str | None = None
+    codex_workspace_root: str | None = None
+    codex_runner_user: str | None = "codexrunner"
     codex_execution_timeout_seconds: int = Field(default=1800, ge=30)
     supabase_url: str | None = None
     supabase_key: str | None = None
@@ -88,13 +90,14 @@ class Settings(BaseModel):
             if not self.openai_model:
                 raise ValueError("OPENAI_FAST_MODEL or OPENAI_MODEL is required when ADFLOW_AI_PROVIDER=openai.")
 
-        if self.github_provider == "github":
-            if not self.github_token:
-                raise ValueError("GITHUB_TOKEN is required when ADFLOW_GITHUB_PROVIDER=github.")
-            if not self.github_repository:
+        if self.github_provider == "github_app":
+            if not self.github_app_id or not self.github_app_private_key or not self.github_app_client_id:
                 raise ValueError(
-                    "GITHUB_REPOSITORY is required when ADFLOW_GITHUB_PROVIDER=github.",
+                    "GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, and GITHUB_APP_CLIENT_ID are required "
+                    "when ADFLOW_GITHUB_PROVIDER=github_app."
                 )
+            if self.deployment_environment == "production" and not self.github_webhook_secret:
+                raise ValueError("GITHUB_WEBHOOK_SECRET is required for the production GitHub App.")
 
         if self.storage_provider == "supabase":
             if not self.supabase_url:
@@ -118,15 +121,17 @@ def load_settings() -> Settings:
         openai_deep_model=os.getenv("OPENAI_DEEP_MODEL"),
         github_repository=os.getenv("GITHUB_REPOSITORY"),
         github_token=os.getenv("GITHUB_TOKEN"),
-        github_token_encryption_key=os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY") or os.getenv("X_ADS_TOKEN_ENCRYPTION_KEY"),
-        github_oauth_client_id=os.getenv("GITHUB_OAUTH_CLIENT_ID"),
-        github_oauth_client_secret=os.getenv("GITHUB_OAUTH_CLIENT_SECRET"),
-        github_oauth_callback_url=os.getenv("GITHUB_OAUTH_CALLBACK_URL", "http://127.0.0.1:8000/integrations/github/oauth/callback"),
+        github_app_id=os.getenv("GITHUB_APP_ID"),
+        github_app_private_key=os.getenv("GITHUB_APP_PRIVATE_KEY"),
+        github_app_client_id=os.getenv("GITHUB_APP_CLIENT_ID"),
+        github_webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET"),
+        github_app_callback_url=os.getenv("GITHUB_APP_CALLBACK_URL", "http://127.0.0.1:8000/integrations/github/app/callback"),
         github_sync_enabled=_env_bool("GITHUB_SYNC_ENABLED", True),
         github_sync_interval_seconds=int(os.getenv("GITHUB_SYNC_INTERVAL_SECONDS", "300")),
         experiment_sync_enabled=_env_bool("ADFLOW_EXPERIMENT_SYNC_ENABLED", False),
         codex_executable=os.getenv("CODEX_EXECUTABLE", "codex"),
-        codex_workspace=os.getenv("CODEX_WORKSPACE"),
+        codex_workspace_root=os.getenv("CODEX_WORKSPACE_ROOT"),
+        codex_runner_user=os.getenv("CODEX_RUNNER_USER", "codexrunner"),
         codex_execution_timeout_seconds=int(os.getenv("CODEX_EXECUTION_TIMEOUT_SECONDS", "1800")),
         supabase_url=os.getenv("SUPABASE_URL"),
         supabase_key=(

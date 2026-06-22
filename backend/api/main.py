@@ -6,7 +6,7 @@ import secrets
 from typing import Any, Literal
 
 import requests
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -87,7 +87,7 @@ async def _experiment_sync_loop() -> None:
 async def start_github_sync_loop() -> None:
     global _GITHUB_SYNC_TASK, _EXPERIMENT_SYNC_TASK
     settings = load_settings()
-    if settings.github_sync_enabled and settings.storage_provider == "supabase" and settings.github_token_encryption_key:
+    if settings.github_sync_enabled and settings.storage_provider == "supabase" and settings.github_provider == "github_app":
         _GITHUB_SYNC_TASK = asyncio.create_task(_github_sync_loop())
     if settings.experiment_sync_enabled and settings.storage_provider == "supabase":
         _EXPERIMENT_SYNC_TASK = asyncio.create_task(_experiment_sync_loop())
@@ -157,11 +157,7 @@ class ImprovementTransitionRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
-class GitHubTokenConnectionRequest(BaseModel):
-    token: str = Field(min_length=20)
-
-
-class GitHubOAuthStartRequest(BaseModel):
+class GitHubAppInstallRequest(BaseModel):
     return_path: str = "/settings"
 
 
@@ -192,6 +188,7 @@ class CodexManualExecutionRequest(BaseModel):
 
 class CodexRealExecutionRequest(BaseModel):
     idempotency_key: str = Field(min_length=8, max_length=200)
+    repository_selection_id: str
 
 
 class CodexCancelRequest(BaseModel):
@@ -1741,20 +1738,46 @@ def get_github_configuration(user_id: str = Depends(_authenticated_user_id)) -> 
     return _build_github_service(load_settings()).configuration()
 
 
-@app.post("/integrations/github/oauth/start")
-def start_github_oauth(request: GitHubOAuthStartRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, str]:
-    return _build_github_service(load_settings()).start_oauth(user_id=user_id, return_path=request.return_path)
+@app.post("/integrations/github/app/install")
+def start_github_app_install(request: GitHubAppInstallRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, str]:
+    return _build_github_service(load_settings()).start_installation(user_id=user_id, return_path=request.return_path)
 
 
-@app.get("/integrations/github/oauth/callback")
-def complete_github_oauth(code: str | None = None, state: str | None = None) -> RedirectResponse:
-    return RedirectResponse(_build_github_service(load_settings()).complete_oauth(code=code, state=state))
+@app.get("/integrations/github/app/callback")
+def complete_github_app_install(
+    installation_id: int | None = None,
+    setup_action: str | None = None,
+    state: str | None = None,
+) -> RedirectResponse:
+    return RedirectResponse(
+        _build_github_service(load_settings()).complete_installation(
+            installation_id=installation_id,
+            setup_action=setup_action,
+            state=state,
+        )
+    )
 
 
-@app.post("/integrations/github/connections")
-def connect_github(request: GitHubTokenConnectionRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
+@app.post("/integrations/github/app/claim")
+def claim_github_app_installation(user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
     try:
-        return _build_github_service(load_settings()).connect_token(user_id=user_id, token=request.token)
+        return _build_github_service(load_settings()).claim_available_installation(user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/integrations/github/webhook")
+async def github_webhook(
+    request: Request,
+    x_hub_signature_256: str | None = Header(default=None),
+    x_github_event: str | None = Header(default=None),
+) -> dict[str, Any]:
+    try:
+        return _build_github_service(load_settings()).handle_webhook(
+            body=await request.body(),
+            signature=x_hub_signature_256,
+            event=x_github_event,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1926,7 +1949,12 @@ def execute_codex_task_manual(task_id: str, request: CodexManualExecutionRequest
 @app.post("/codex-tasks/{task_id}/execute/real")
 def execute_codex_task_real(task_id: str, request: CodexRealExecutionRequest, user_id: str = Depends(_authenticated_user_id)) -> dict[str, Any]:
     try:
-        return _build_codex_service(load_settings()).execute_real(user_id=user_id, task_id=task_id, idempotency_key=request.idempotency_key)
+        return _build_codex_service(load_settings()).execute_real(
+            user_id=user_id,
+            task_id=task_id,
+            idempotency_key=request.idempotency_key,
+            repository_selection_id=request.repository_selection_id,
+        )
     except InsufficientCreditsError as exc:
         raise HTTPException(status_code=402, detail={"error": "INSUFFICIENT_CREDITS", "requiredCredits": exc.required_credits, "currentCredits": exc.current_credits}) from exc
     except ValueError as exc:
@@ -2108,7 +2136,15 @@ def _build_improvement_service(settings: Settings) -> ImprovementWorkflowService
 
 
 def _build_github_service(settings: Settings) -> GitHubIntegrationService:
-    return GitHubIntegrationService(_repository_for_settings(settings), settings.github_token_encryption_key, oauth_client_id=settings.github_oauth_client_id, oauth_client_secret=settings.github_oauth_client_secret, oauth_callback_url=settings.github_oauth_callback_url, frontend_url=settings.frontend_app_url)
+    return GitHubIntegrationService(
+        _repository_for_settings(settings),
+        app_id=settings.github_app_id,
+        private_key=settings.github_app_private_key,
+        client_id=settings.github_app_client_id,
+        webhook_secret=settings.github_webhook_secret,
+        callback_url=settings.github_app_callback_url,
+        frontend_url=settings.frontend_app_url,
+    )
 
 
 def _build_codex_service(settings: Settings) -> CodexTaskService:
@@ -2265,15 +2301,9 @@ def _build_openai_llm_client(settings: Settings) -> OpenAIJSONClient | None:
 
 
 def _build_pr_client(settings: Settings) -> GitHubPRClient:
-    if settings.github_provider == "github":
-        if settings.github_repository is None or settings.github_token is None:
-            raise ValueError("GITHUB_REPOSITORY and GITHUB_TOKEN are required.")
-        return GitHubPRClient(
-            repository=settings.github_repository,
-            token=settings.github_token,
-        )
-
-    raise ValueError("Legacy workflow PR creation requires ADFLOW_GITHUB_PROVIDER=github. Mock PR creation is disabled.")
+    raise ValueError(
+        "Legacy single-repository PR creation is disabled. Use a user-selected GitHub App installation."
+    )
 
 
 def _build_storage(

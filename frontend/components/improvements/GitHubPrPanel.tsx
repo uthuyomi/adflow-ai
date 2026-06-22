@@ -11,7 +11,7 @@ import { listGitHubConnections, listGitHubRepositories, selectGitHubRepository }
 
 export function GitHubPrPanel({ improvementId, enabled }: { improvementId: string; enabled: boolean }) {
   const connections = useQuery({ queryKey: ["github-connections"], queryFn: listGitHubConnections });
-  const connection = connections.data?.find((item) => item.status === "active");
+  const connection = connections.data?.find((item) => item.status === "active" && item.auth_type === "GITHUB_APP");
   const repositories = useQuery({ queryKey: ["github-repositories", connection?.id], queryFn: () => listGitHubRepositories(connection!.id), enabled: Boolean(connection) });
   const [repository, setRepository] = useState("");
   const create = useCreateGitHubPr();
